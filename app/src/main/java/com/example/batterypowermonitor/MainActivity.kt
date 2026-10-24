@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -21,9 +22,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -37,6 +40,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -44,12 +49,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -61,41 +69,82 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 // ============================================================================
-// 1. MÔ HÌNH DỮ LIỆU ĐO LƯỜNG (TÁCH BẠCH PHÍA PIN & PHÍA CỔNG VBUS)
+// 1. BA CHẾ ĐỘ VẬN HÀNH NGƯỜI DÙNG (NORMAL / ADB SHIZUKU / ROOT)
+// ============================================================================
+
+enum class AppPrivilegeMode(
+    val id: Int,
+    val shortTitle: String,
+    val fullTitle: String,
+    val description: String,
+    val badgeColorHex: Long
+) {
+    NORMAL_USER(
+        id = 0,
+        shortTitle = "1. Phổ thông",
+        fullTitle = "Chế độ 1: Người dùng phổ thông (Standard API)",
+        description = "Không truy cập Node trong Kernel (do SELinux chặn). Chỉ dùng Android BatteryManager API cơ bản: tính công suất ước tính phía cell pin (P_bat) và suy luận chuẩn sạc theo ngưỡng công suất.",
+        badgeColorHex = 0xFF64748B
+    ),
+    ADB_SHIZUKU(
+        id = 1,
+        shortTitle = "2. ADB (Shizuku)",
+        fullTitle = "Chế độ 2: ADB qua Shizuku (Quyền Shell UID 2000)",
+        description = "Thông qua Shizuku API để chạy lệnh 'dumpsys battery' và đọc các node sysfs cho phép quyền ADB Shell. Lấy được Max Charging Voltage/Current (VBUS/IBUS đàm phán), Charge Counter và trạng thái cổng USB-C chính xác hơn.",
+        badgeColorHex = 0xFF0284C7
+    ),
+    ROOT_FULL(
+        id = 2,
+        shortTitle = "3. Root (Full)",
+        fullTitle = "Chế độ 3: Root Toàn Quyền (Superuser UID 0)",
+        description = "Thực thi qua 'su -c' vượt hoàn toàn rào cản SELinux: Đọc trực tiếp mọi node '/sys/class/power_supply/*' (VBUS/IBUS thực, cờ pd_active, usb_type, real_type, charge_pump, cycle_count) để xác thực 100% chuẩn sạc nhanh và công suất đầu vào thực tế.",
+        badgeColorHex = 0xFF059669
+    );
+
+    companion object {
+        fun fromId(id: Int): AppPrivilegeMode = entries.firstOrNull { it.id == id } ?: NORMAL_USER
+    }
+}
+
+// ============================================================================
+// 2. MÔ HÌNH DỮ LIỆU ĐO LƯỜNG (TÁCH BẠCH PHÍA PIN & PHÍA CỔNG VBUS)
 // ============================================================================
 
 data class SysfsProbeReport(
+    val activeMode: AppPrivilegeMode = AppPrivilegeMode.NORMAL_USER,
+    val privilegeStatusText: String = "Chế độ Phổ thông (Không đọc Kernel Node)",
+    val isPrivilegeGranted: Boolean = true,
     val vbusVoltageV: Float? = null,
     val ibusCurrentA: Float? = null,
-    val vbusSourcePath: String = "Không đọc được (SELinux chặn hoặc ROM ẩn)",
-    val ibusSourcePath: String = "Không đọc được (SELinux chặn hoặc ROM ẩn)",
+    val vbusSourcePath: String = "Đã tắt ở chế độ Phổ thông",
+    val ibusSourcePath: String = "Đã tắt ở chế độ Phổ thông",
     val kernelProtocolRaw: String = "",
-    val kernelProtocolPath: String = "Bị chặn bởi SELinux (Cần Root/ADB để đọc sysfs)",
+    val kernelProtocolPath: String = "Đã tắt ở chế độ Phổ thông",
+    val extraDeveloperMetrics: String = "",
     val isVbusMeasured: Boolean = false,
     val isKernelProtocolVerified: Boolean = false
 )
 
 data class BatteryTelemetry(
-    // Thông số phía Cell Pin (Battery-side) từ Android BatteryManager API
     val batCurrentMa: Float = 0f,
     val batCurrentAmp: Float = 0f,
-    val batVoltageVolt: Float = 0f,       // Điện áp 1 cell (3.7V - 4.45V) từ EXTRA_VOLTAGE
-    val cellSeriesCount: Int = 1,         // 1 = Single-cell (1S), 2 = Dual-cell nối tiếp (2S)
-    val effectiveBatPowerW: Float = 0f,   // P_bat = V_bat * I_bat * cellSeriesCount
-
-    // Thông số phía Cổng sạc (USB VBUS-side) nếu đọc được từ sysfs
+    val batVoltageVolt: Float = 0f,
+    val cellSeriesCount: Int = 1,
+    val effectiveBatPowerW: Float = 0f,
     val sysfsReport: SysfsProbeReport = SysfsProbeReport(),
-    val vbusInputPowerW: Float? = null,   // P_vbus = V_bus * I_bus (Chỉ có khi đọc được cả VBUS & IBUS)
-
-    // Trạng thái chung
+    val vbusInputPowerW: Float? = null,
     val temperatureC: Float = 0f,
     val levelPercent: Int = 0,
     val isCharging: Boolean = false,
@@ -106,6 +155,7 @@ data class BatteryTelemetry(
 data class LogSample(
     val timestampMs: Long,
     val timeFormatted: String,
+    val modeName: String,
     val batVoltageV: Float,
     val batCurrentA: Float,
     val batPowerW: Float,
@@ -130,6 +180,7 @@ data class ChargingSessionRecord(
     var accumulatedMah: Float,
     var detectedProtocol: String,
     var referenceChargerName: String,
+    var privilegeModeUsed: String,
     var samplesCount: Int,
     val csvFilePath: String
 )
@@ -149,13 +200,13 @@ data class ChargerSpecProfile(
     val dimensionsWeight: String,
     val accentColorHex: Long,
     val productImageUrl: String,
-    val verificationStatus: String, // "Đã kiểm chứng Teardown" hoặc "Thông số công bố của hãng (IC tham khảo)"
+    val verificationStatus: String,
     val sourceTitle: String,
     val sourceUrl: String
 )
 
 data class ProtocolDetectionResult(
-    val isVerifiedFromKernel: Boolean, // true = Đọc thật từ sysfs, false = Suy luận ước tính từ P_bat
+    val isVerifiedFromKernel: Boolean,
     val primaryStandard: String,
     val technicalExplanation: String,
     val powerBasisNote: String,
@@ -163,131 +214,375 @@ data class ProtocolDetectionResult(
 )
 
 // ============================================================================
-// 2. BỘ QUÉT ĐA ĐƯỜNG DẪN SYSFS (MULTI-PATH KERNEL SYSFS SCANNER)
+// 3. BỘ THỰC THI ĐA CHẾ ĐỘ: NORMAL API vs ADB (SHIZUKU) vs ROOT (SU)
 // ============================================================================
 
-object KernelSysfsScanner {
-    private val vbusCandidates = listOf(
-        "/sys/class/power_supply/usb/voltage_now",
-        "/sys/class/power_supply/main-charger/voltage_now",
-        "/sys/class/power_supply/ac/voltage_now",
-        "/sys/class/power_supply/pc_port/voltage_now",
-        "/sys/class/power_supply/charge_pump_master/cp_vbus",
-        "/sys/class/power_supply/wireless/voltage_now"
-    )
+object PrivilegedTelemetryEngine {
 
-    private val ibusCandidates = listOf(
-        "/sys/class/power_supply/usb/current_now",
-        "/sys/class/power_supply/usb/input_current_now",
-        "/sys/class/power_supply/main-charger/current_now",
-        "/sys/class/power_supply/ac/current_now",
-        "/sys/class/power_supply/charge_pump_master/cp_ibus"
-    )
-
-    private val protocolCandidates = listOf(
-        "/sys/class/power_supply/usb/usb_type",
-        "/sys/class/power_supply/usb/real_type",
-        "/sys/class/power_supply/usb/pd_active",
-        "/sys/class/power_supply/usb/typec_mode",
-        "/sys/class/power_supply/bms/charge_type"
-    )
-
-    private fun readFirstReadableFile(paths: List<String>): Pair<String, String>? {
-        for (p in paths) {
-            try {
-                val f = File(p)
-                if (f.exists() && f.canRead()) {
-                    val content = f.readText().trim()
-                    if (content.isNotEmpty()) {
-                        return p to content
-                    }
-                }
-            } catch (_: Exception) {
-                // SELinux EACCES hoặc IOException
+    fun checkShizukuStatus(): Pair<Boolean, String> {
+        return try {
+            if (!Shizuku.pingBinder()) {
+                false to "Shizuku chưa chạy (Hãy mở app Shizuku và bật Wireless Debugging / ADB)"
+            } else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                false to "Chưa cấp quyền Shizuku (Hãy bấm nút 'Cấp quyền Shizuku' bên dưới)"
+            } else {
+                val uid = Shizuku.getUid()
+                val role = if (uid == 0) "Root-backed Shizuku (UID 0)" else "ADB Shell (UID $uid)"
+                true to "Đã kết nối Shizuku: $role"
             }
+        } catch (e: Throwable) {
+            false to "Shizuku chưa sẵn sàng: ${e.javaClass.simpleName}"
         }
-        // Quét động thêm các node tcpm-* nếu có
+    }
+
+    fun requestShizukuPermission(requestCode: Int = 2026) {
         try {
-            val psDir = File("/sys/class/power_supply")
-            val children = psDir.listFiles() ?: emptyArray()
-            for (child in children) {
-                if (child.name.startsWith("tcpm") || child.name.contains("usb", ignoreCase = true)) {
-                    val usbTypeFile = File(child, "usb_type")
-                    if (usbTypeFile.exists() && usbTypeFile.canRead()) {
-                        val txt = usbTypeFile.readText().trim()
-                        if (txt.isNotEmpty()) return usbTypeFile.absolutePath to txt
+            if (Shizuku.pingBinder() && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                Shizuku.requestPermission(requestCode)
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun execShizukuCommand(cmd: String): String {
+        return try {
+            if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                return ""
+            }
+            val method = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            method.isAccessible = true
+            val process = method.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor(1500, TimeUnit.MILLISECONDS)
+            output.trim()
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    private fun execRootCommand(cmd: String): Pair<Boolean, String> {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            val finished = process.waitFor(1800, TimeUnit.MILLISECONDS)
+            if (!finished) {
+                process.destroy()
+                false to ""
+            } else if (process.exitValue() == 0 && output.isNotBlank()) {
+                true to output.trim()
+            } else {
+                false to ""
+            }
+        } catch (_: Throwable) {
+            false to ""
+        }
+    }
+
+    private fun normalizeUnitToVolt(raw: Float?): Float? {
+        if (raw == null) return null
+        val v = abs(raw)
+        return when {
+            v <= 0.1f -> null
+            v > 100_000f -> v / 1_000_000f
+            v > 100f -> v / 1_000f
+            else -> v
+        }
+    }
+
+    private fun normalizeUnitToAmp(raw: Float?): Float? {
+        if (raw == null) return null
+        val i = abs(raw)
+        return when {
+            i <= 0.001f -> null
+            i > 50_000f -> i / 1_000_000f
+            i > 50f -> i / 1_000f
+            else -> i
+        }
+    }
+
+    fun probeByMode(mode: AppPrivilegeMode): SysfsProbeReport {
+        return when (mode) {
+            AppPrivilegeMode.NORMAL_USER -> probeNormalMode()
+            AppPrivilegeMode.ADB_SHIZUKU -> probeShizukuAdbMode()
+            AppPrivilegeMode.ROOT_FULL -> probeRootMode()
+        }
+    }
+
+    private fun probeNormalMode(): SysfsProbeReport {
+        return SysfsProbeReport(
+            activeMode = AppPrivilegeMode.NORMAL_USER,
+            privilegeStatusText = "Đang chạy Chế độ Phổ thông: Chỉ dùng Android BatteryManager API",
+            isPrivilegeGranted = true,
+            vbusVoltageV = null,
+            ibusCurrentA = null,
+            vbusSourcePath = "Bị vô hiệu ở Chế độ Phổ thông (Chuyển sang ADB/Root để mở khóa)",
+            ibusSourcePath = "Bị vô hiệu ở Chế độ Phổ thông (Chuyển sang ADB/Root để mở khóa)",
+            kernelProtocolRaw = "",
+            kernelProtocolPath = "Bị vô hiệu ở Chế độ Phổ thông",
+            extraDeveloperMetrics = "Chế độ cơ bản: Không đọc sysfs Kernel. Công suất hiển thị là ước tính phía cell pin (P_bat).",
+            isVbusMeasured = false,
+            isKernelProtocolVerified = false
+        )
+    }
+
+    private fun probeShizukuAdbMode(): SysfsProbeReport {
+        val (ok, statusMsg) = checkShizukuStatus()
+        if (!ok) {
+            return SysfsProbeReport(
+                activeMode = AppPrivilegeMode.ADB_SHIZUKU,
+                privilegeStatusText = statusMsg,
+                isPrivilegeGranted = false,
+                vbusSourcePath = "Chờ kết nối và cấp quyền Shizuku...",
+                ibusSourcePath = "Chờ kết nối và cấp quyền Shizuku...",
+                kernelProtocolPath = "Chờ kết nối và cấp quyền Shizuku...",
+                extraDeveloperMetrics = "Hướng dẫn: Cài đặt ứng dụng Shizuku, kích hoạt qua Wireless Debugging và bấm nút 'Cấp quyền Shizuku'."
+            )
+        }
+
+        val script = """
+            dumpsys battery
+            echo "===SYSFS==="
+            for p in /sys/class/power_supply/usb/voltage_now /sys/class/power_supply/main-charger/voltage_now /sys/class/power_supply/ac/voltage_now; do
+              if [ -r "${'$'}p" ]; then echo "VBUS:${'$'}p:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+            for p in /sys/class/power_supply/usb/current_now /sys/class/power_supply/usb/input_current_now /sys/class/power_supply/main-charger/current_now; do
+              if [ -r "${'$'}p" ]; then echo "IBUS:${'$'}p:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+            for p in /sys/class/power_supply/usb/usb_type /sys/class/power_supply/usb/real_type /sys/class/power_supply/usb/pd_active /sys/class/power_supply/bms/charge_type; do
+              if [ -r "${'$'}p" ]; then echo "PROTO:${'$'}p:${'$'}(cat ${'$'}p 2>/dev/null)"; fi
+            done
+        """.trimIndent()
+
+        val rawOut = execShizukuCommand(script)
+        if (rawOut.isEmpty()) {
+            return SysfsProbeReport(
+                activeMode = AppPrivilegeMode.ADB_SHIZUKU,
+                privilegeStatusText = "$statusMsg (Không nhận được phản hồi từ tiến trình shell)",
+                isPrivilegeGranted = true
+            )
+        }
+
+        var maxChargingMicroVolt: Float? = null
+        var maxChargingMicroAmp: Float? = null
+        var chargeCounterUah: Long? = null
+        var sysVbus: Float? = null
+        var sysVbusPath = ""
+        var sysIbus: Float? = null
+        var sysIbusPath = ""
+        val protoList = mutableListOf<String>()
+        var protoPath = ""
+
+        rawOut.lineSequence().forEach { line ->
+            val t = line.trim()
+            when {
+                t.startsWith("Max charging voltage:", ignoreCase = true) -> {
+                    maxChargingMicroVolt = t.substringAfter(":").trim().toFloatOrNull()
+                }
+                t.startsWith("Max charging current:", ignoreCase = true) -> {
+                    maxChargingMicroAmp = t.substringAfter(":").trim().toFloatOrNull()
+                }
+                t.startsWith("Charge counter:", ignoreCase = true) -> {
+                    chargeCounterUah = t.substringAfter(":").trim().toLongOrNull()
+                }
+                t.startsWith("VBUS:") -> {
+                    val parts = t.split(":")
+                    if (parts.size >= 3) {
+                        sysVbusPath = parts[1]
+                        sysVbus = normalizeUnitToVolt(parts[2].toFloatOrNull())
+                    }
+                }
+                t.startsWith("IBUS:") -> {
+                    val parts = t.split(":")
+                    if (parts.size >= 3) {
+                        sysIbusPath = parts[1]
+                        sysIbus = normalizeUnitToAmp(parts[2].toFloatOrNull())
+                    }
+                }
+                t.startsWith("PROTO:") -> {
+                    val parts = t.split(":")
+                    if (parts.size >= 3) {
+                        val v = parts.subList(2, parts.size).joinToString(":").trim()
+                        if (v.isNotEmpty() && v != "0" && !v.equals("Unknown", true)) {
+                            protoList.add("${File(parts[1]).name}=$v")
+                            if (protoPath.isEmpty()) protoPath = parts[1]
+                        }
                     }
                 }
             }
-        } catch (_: Exception) {}
-        return null
-    }
-
-    private fun normalizeSysfsVoltage(rawStr: String): Float? {
-        val v = rawStr.toFloatOrNull() ?: return null
-        val absV = abs(v)
-        return when {
-            absV <= 0.1f -> null
-            absV > 100_000f -> absV / 1_000_000f // microVolt (µV) -> Volt
-            absV > 100f -> absV / 1_000f         // milliVolt (mV) -> Volt
-            else -> absV                         // Volt (V)
         }
-    }
 
-    private fun normalizeSysfsCurrent(rawStr: String): Float? {
-        val i = rawStr.toFloatOrNull() ?: return null
-        val absI = abs(i)
-        return when {
-            absI <= 0.001f -> null
-            absI > 50_000f -> absI / 1_000_000f  // microAmp (µA) -> Amp
-            absI > 50f -> absI / 1_000f          // milliAmp (mA) -> Amp
-            else -> absI                         // Amp (A)
+        val negotiatedVbus = sysVbus ?: normalizeUnitToVolt(maxChargingMicroVolt)
+        val negotiatedIbus = sysIbus ?: normalizeUnitToAmp(maxChargingMicroAmp)
+
+        val vbusLabel = when {
+            sysVbus != null -> "$sysVbusPath (Đọc trực tiếp qua Shizuku Shell)"
+            negotiatedVbus != null -> "dumpsys battery -> Max charging voltage (Điện áp thương lượng)"
+            else -> "ROM ẩn thông số VBUS với quyền ADB Shell (Cần chế độ Root)"
         }
+
+        val ibusLabel = when {
+            sysIbus != null -> "$sysIbusPath (Đọc trực tiếp qua Shizuku Shell)"
+            negotiatedIbus != null -> "dumpsys battery -> Max charging current (Dòng thương lượng tối đa)"
+            else -> "ROM ẩn thông số IBUS với quyền ADB Shell (Cần chế độ Root)"
+        }
+
+        if (protoList.isEmpty() && negotiatedVbus != null && negotiatedVbus >= 4.5f) {
+            val pdTag = when {
+                negotiatedVbus >= 19.0f -> "dumpsys_negotiated=HV_20V (${String.format("%.1fV", negotiatedVbus)})"
+                negotiatedVbus >= 14.0f -> "dumpsys_negotiated=HV_15V (${String.format("%.1fV", negotiatedVbus)})"
+                negotiatedVbus >= 8.5f -> "dumpsys_negotiated=FastCharge_9V (${String.format("%.1fV", negotiatedVbus)})"
+                else -> "dumpsys_negotiated=Standard_5V (${String.format("%.1fV", negotiatedVbus)})"
+            }
+            protoList.add(pdTag)
+            protoPath = "dumpsys battery (Shizuku ADB)"
+        }
+
+        val counterMah = chargeCounterUah?.let { it / 1000 } ?: 0L
+        val devExtra = buildString {
+            append("Dữ liệu ADB (dumpsys): ")
+            append("Dung lượng thực trong pin = ${if (counterMah > 0) "${counterMah} mAh" else "N/A"}")
+            if (negotiatedVbus != null) append(" • Áp đàm phán = ${String.format("%.2fV", negotiatedVbus)}")
+            if (negotiatedIbus != null) append(" • Dòng đàm phán = ${String.format("%.2fA", negotiatedIbus)}")
+        }
+
+        val protoJoined = protoList.joinToString(" | ")
+        return SysfsProbeReport(
+            activeMode = AppPrivilegeMode.ADB_SHIZUKU,
+            privilegeStatusText = statusMsg,
+            isPrivilegeGranted = true,
+            vbusVoltageV = negotiatedVbus,
+            ibusCurrentA = negotiatedIbus,
+            vbusSourcePath = vbusLabel,
+            ibusSourcePath = ibusLabel,
+            kernelProtocolRaw = protoJoined,
+            kernelProtocolPath = if (protoPath.isNotEmpty()) protoPath else "SELinux chặn usb_type đối với UID 2000",
+            extraDeveloperMetrics = devExtra,
+            isVbusMeasured = (negotiatedVbus != null && negotiatedVbus >= 3.5f),
+            isKernelProtocolVerified = protoJoined.isNotEmpty()
+        )
     }
 
-    fun probe(): SysfsProbeReport {
-        val vbusHit = readFirstReadableFile(vbusCandidates)
-        val ibusHit = readFirstReadableFile(ibusCandidates)
+    private fun probeRootMode(): SysfsProbeReport {
+        val script = """
+            for p in /sys/class/power_supply/usb/voltage_now /sys/class/power_supply/main-charger/voltage_now /sys/class/power_supply/ac/voltage_now /sys/class/power_supply/charge_pump_master/cp_vbus /sys/class/power_supply/wireless/voltage_now; do
+              if [ -f "${'$'}p" ]; then echo "VBUS:${'$'}p:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+            for p in /sys/class/power_supply/usb/current_now /sys/class/power_supply/usb/input_current_now /sys/class/power_supply/main-charger/current_now /sys/class/power_supply/charge_pump_master/cp_ibus; do
+              if [ -f "${'$'}p" ]; then echo "IBUS:${'$'}p:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+            for p in /sys/class/power_supply/usb/usb_type /sys/class/power_supply/usb/real_type /sys/class/power_supply/usb/pd_active /sys/class/power_supply/bms/charge_type /sys/class/power_supply/usb/typec_mode; do
+              if [ -f "${'$'}p" ]; then echo "PROTO:${'$'}p:${'$'}(cat ${'$'}p 2>/dev/null)"; fi
+            done
+            for p in /sys/class/power_supply/battery/cycle_count /sys/class/power_supply/bms/cycle_count; do
+              if [ -f "${'$'}p" ]; then echo "CYCLE:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+            for p in /sys/class/power_supply/battery/charge_full /sys/class/power_supply/bms/charge_full; do
+              if [ -f "${'$'}p" ]; then echo "FULL:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+            for p in /sys/class/power_supply/battery/charge_full_design /sys/class/power_supply/bms/charge_full_design; do
+              if [ -f "${'$'}p" ]; then echo "DESIGN:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
+            done
+        """.trimIndent()
 
-        val vbusV = vbusHit?.let { normalizeSysfsVoltage(it.second) }
-        val ibusA = ibusHit?.let { normalizeSysfsCurrent(it.second) }
+        val (rootOk, out) = execRootCommand(script)
+        if (!rootOk) {
+            return SysfsProbeReport(
+                activeMode = AppPrivilegeMode.ROOT_FULL,
+                privilegeStatusText = "Không lấy được quyền Root (Thiết bị chưa Root hoặc bạn đã từ chối quyền su)",
+                isPrivilegeGranted = false,
+                vbusSourcePath = "Cần cấp quyền Superuser (su) để đọc",
+                ibusSourcePath = "Cần cấp quyền Superuser (su) để đọc",
+                kernelProtocolPath = "Cần cấp quyền Superuser (su) để đọc",
+                extraDeveloperMetrics = "Nếu máy chưa Root, hãy chuyển sang 'Chế độ 2: ADB (Shizuku)' hoặc 'Chế độ 1: Phổ thông'."
+            )
+        }
 
-        val protoBuilder = mutableListOf<String>()
-        var protoPathFound = ""
-        for (p in protocolCandidates) {
-            try {
-                val f = File(p)
-                if (f.exists() && f.canRead()) {
-                    val txt = f.readText().trim()
-                    if (txt.isNotEmpty() && txt != "0" && !txt.equals("Unknown", ignoreCase = true)) {
-                        protoBuilder.add("${f.name}=$txt")
-                        if (protoPathFound.isEmpty()) protoPathFound = p
+        var vbusV: Float? = null
+        var vbusPath = "Không tìm thấy node VBUS trên phần cứng này"
+        var ibusA: Float? = null
+        var ibusPath = "Không tìm thấy node IBUS trên phần cứng này"
+        val protoItems = mutableListOf<String>()
+        var protoPath = ""
+        var cycleCount = ""
+        var chargeFull = 0f
+        var chargeDesign = 0f
+
+        out.lineSequence().forEach { line ->
+            val t = line.trim()
+            when {
+                t.startsWith("VBUS:") -> {
+                    val parts = t.split(":")
+                    if (parts.size >= 3) {
+                        val candidate = normalizeUnitToVolt(parts[2].toFloatOrNull())
+                        if (candidate != null) {
+                            vbusV = candidate
+                            vbusPath = "${parts[1]} (Root UID 0)"
+                        }
                     }
                 }
-            } catch (_: Exception) {}
+                t.startsWith("IBUS:") -> {
+                    val parts = t.split(":")
+                    if (parts.size >= 3) {
+                        val candidate = normalizeUnitToAmp(parts[2].toFloatOrNull())
+                        if (candidate != null) {
+                            ibusA = candidate
+                            ibusPath = "${parts[1]} (Root UID 0)"
+                        }
+                    }
+                }
+                t.startsWith("PROTO:") -> {
+                    val parts = t.split(":")
+                    if (parts.size >= 3) {
+                        val v = parts.subList(2, parts.size).joinToString(":").trim()
+                        if (v.isNotEmpty() && v != "0" && !v.equals("Unknown", true)) {
+                            protoItems.add("${File(parts[1]).name}=$v")
+                            if (protoPath.isEmpty()) protoPath = "${parts[1]} (Root UID 0)"
+                        }
+                    }
+                }
+                t.startsWith("CYCLE:") -> cycleCount = t.substringAfter(":").trim()
+                t.startsWith("FULL:") -> chargeFull = t.substringAfter(":").trim().toFloatOrNull() ?: 0f
+                t.startsWith("DESIGN:") -> chargeDesign = t.substringAfter(":").trim().toFloatOrNull() ?: 0f
+            }
         }
 
-        val protoRaw = protoBuilder.joinToString(" | ")
+        val healthPctStr = if (chargeFull > 0f && chargeDesign > 0f) {
+            val pct = (chargeFull / chargeDesign) * 100f
+            val fullMah = if (chargeFull > 100_000f) chargeFull / 1000f else chargeFull
+            val desMah = if (chargeDesign > 100_000f) chargeDesign / 1000f else chargeDesign
+            "Độ chai pin phần cứng: Còn ${String.format("%.1f%%", pct)} (${String.format("%.0f", fullMah)} / ${String.format("%.0f mAh", desMah)})"
+        } else "Độ chai pin: ROM không xuất node charge_full"
+
+        val rootExtra = "Root BMS Telemetry: Chu kỳ sạc (Cycle Count) = ${cycleCount.ifEmpty { "N/A" }} • $healthPctStr"
+        val protoJoined = protoItems.joinToString(" | ")
+
         return SysfsProbeReport(
+            activeMode = AppPrivilegeMode.ROOT_FULL,
+            privilegeStatusText = "✓ Đã kích hoạt Root Toàn Quyền (Superuser UID 0)",
+            isPrivilegeGranted = true,
             vbusVoltageV = vbusV,
             ibusCurrentA = ibusA,
-            vbusSourcePath = vbusHit?.first ?: "SELinux chặn đọc VBUS (/sys/class/power_supply/*)",
-            ibusSourcePath = ibusHit?.first ?: "SELinux chặn đọc IBUS (/sys/class/power_supply/*)",
-            kernelProtocolRaw = protoRaw,
-            kernelProtocolPath = if (protoPathFound.isNotEmpty()) protoPathFound else "Bị chặn bởi SELinux trên Android không Root",
+            vbusSourcePath = vbusPath,
+            ibusSourcePath = ibusPath,
+            kernelProtocolRaw = protoJoined,
+            kernelProtocolPath = if (protoPath.isNotEmpty()) protoPath else "Đã đọc với quyền Root",
+            extraDeveloperMetrics = rootExtra,
             isVbusMeasured = (vbusV != null && vbusV >= 3.5f),
-            isKernelProtocolVerified = protoRaw.isNotEmpty()
+            isKernelProtocolVerified = protoJoined.isNotEmpty()
         )
     }
 }
 
 // ============================================================================
-// 3. DANH MỤC CỦ SẠC THAM KHẢO & ĐỐI CHIẾU THỦ CÔNG (CÓ LINK NGUỒN RÕ RÀNG)
+// 4. DANH MỤC CỦ SẠC THAM KHẢO & ĐỐI CHIẾU THỦ CÔNG (CÓ LINK NGUỒN RÕ RÀNG)
 // ============================================================================
 
 object ChargerCatalogRepository {
     val chargers = listOf(
-        // --- APPLE ---
         ChargerSpecProfile(
             brand = "Apple",
             productName = "Apple 20W USB-C Power Adapter",
@@ -364,8 +659,6 @@ object ChargerCatalogRepository {
             sourceTitle = "ChargerLAB: Teardown of Apple 140W USB-C Power Adapter (A3607)",
             sourceUrl = "https://www.chargerlab.com/teardown-of-apple-140w-usb-c-power-adapter-a3607"
         ),
-
-        // --- BASEUS ---
         ChargerSpecProfile(
             brand = "Baseus",
             productName = "Baseus GaN2 Quick Charger Dual-C 45W",
@@ -442,8 +735,6 @@ object ChargerCatalogRepository {
             sourceTitle = "ChargerLAB: Teardown of Baseus 140W PD3.1 GaN5 Pro Charger",
             sourceUrl = "https://www.chargerlab.com/teardown-of-baseus-140w-pd3-1-gan-5-pro-fast-charger-2c1a"
         ),
-
-        // --- BELKIN ---
         ChargerSpecProfile(
             brand = "Belkin",
             productName = "Belkin BoostCharge Compact 45W GaN Wall Charger",
@@ -501,8 +792,6 @@ object ChargerCatalogRepository {
             sourceTitle = "ChargerLAB: Teardown of Belkin 140W 4-Port GaN (WCH014)",
             sourceUrl = "https://www.chargerlab.com/teardown-of-belkin-boostcharge-pro-140w-4-port-gan-wall-charger-wch014"
         ),
-
-        // --- XIAOMI ---
         ChargerSpecProfile(
             brand = "Xiaomi",
             productName = "Xiaomi 33W USB-A Fast Charger",
@@ -581,9 +870,6 @@ object ChargerCatalogRepository {
         )
     )
 
-    /**
-     * Phân tích cơ chế sạc nhanh ĐỘC LẬP (Không dùng củ sạc để suy luận vòng tròn)
-     */
     fun analyzeChargingProtocol(telemetry: BatteryTelemetry): ProtocolDetectionResult {
         if (!telemetry.isCharging) {
             return ProtocolDetectionResult(
@@ -598,58 +884,71 @@ object ChargerCatalogRepository {
         val sys = telemetry.sysfsReport
         val pUsed = telemetry.vbusInputPowerW ?: telemetry.effectiveBatPowerW
         val powerSourceStr = if (telemetry.vbusInputPowerW != null) {
-            "Đo từ VBUS×IBUS (${String.format("%.2fW", pUsed)})"
+            "Đo từ VBUS×IBUS (${String.format("%.2fW", pUsed)}) [${sys.activeMode.shortTitle}]"
         } else {
-            "Ước tính từ phía cell pin P_bat (${String.format("%.2fW", pUsed)})"
+            "Ước tính từ phía cell pin P_bat (${String.format("%.2fW", pUsed)}) [${sys.activeMode.shortTitle}]"
         }
 
-        // TRƯỜNG HỢP 1: Đọc được cờ xác thực thực tế từ Kernel sysfs
         if (sys.isKernelProtocolVerified) {
             val rawUpper = sys.kernelProtocolRaw.uppercase()
             val parsedName = when {
                 rawUpper.contains("PD_PPS") || rawUpper.contains("APDO") ->
                     "USB PD 3.0 / 3.1 — Chế độ PPS (APDO)"
-                rawUpper.contains("PD_DRP") || rawUpper.contains("PD") || rawUpper.contains("PD_ACTIVE=1") ->
+                rawUpper.contains("PD_DRP") || rawUpper.contains("PD_ACTIVE=1") || rawUpper.contains("USB_TYPE=[C] PD") || rawUpper.contains("USB_PD") ->
                     "USB Power Delivery (USB PD Fixed PDO)"
                 rawUpper.contains("HVDCP_3P5") -> "Qualcomm Quick Charge 3+ (QC 3.5)"
                 rawUpper.contains("HVDCP_3") -> "Qualcomm Quick Charge 3.0"
                 rawUpper.contains("HVDCP") -> "Qualcomm Quick Charge 2.0 (HVDCP)"
+                rawUpper.contains("DUMPSYS_NEGOTIATED=HV_20V") -> "Sạc nhanh cao áp 20V (Đọc từ ADB dumpsys battery)"
+                rawUpper.contains("DUMPSYS_NEGOTIATED=HV_15V") -> "Sạc nhanh 15V PD (Đọc từ ADB dumpsys battery)"
+                rawUpper.contains("DUMPSYS_NEGOTIATED=FASTCHARGE_9V") -> "Sạc nhanh 9V PD / QC (Đọc từ ADB dumpsys battery)"
                 rawUpper.contains("CDP") -> "USB Charging Downstream Port (CDP 5V/1.5A)"
                 rawUpper.contains("DCP") -> "USB Dedicated Charging Port (DCP / Adapter)"
-                else -> "Chuẩn báo từ Kernel: ${sys.kernelProtocolRaw}"
+                else -> "Chuẩn báo từ hệ thống: ${sys.kernelProtocolRaw}"
+            }
+
+            val badgeText = if (sys.activeMode == AppPrivilegeMode.ROOT_FULL) {
+                "✓ XÁC THỰC KERNEL (ROOT)"
+            } else {
+                "✓ XÁC THỰC QUA ADB (SHIZUKU)"
             }
 
             return ProtocolDetectionResult(
                 isVerifiedFromKernel = true,
                 primaryStandard = parsedName,
-                technicalExplanation = "Đọc trực tiếp từ node Kernel (${sys.kernelProtocolPath}): [${sys.kernelProtocolRaw}].",
+                technicalExplanation = "Nguồn dữ liệu (${sys.kernelProtocolPath}): [${sys.kernelProtocolRaw}].",
                 powerBasisNote = powerSourceStr,
-                verificationBadge = "✓ XÁC THỰC TỪ KERNEL"
+                verificationBadge = badgeText
             )
         }
 
-        // TRƯỜNG HỢP 2: SELinux chặn đọc sysfs -> Chỉ phân loại theo ngưỡng công suất nạp vào pin & cảnh báo rõ
+        val modeHint = when (sys.activeMode) {
+            AppPrivilegeMode.NORMAL_USER -> "Đang ở Chế độ 1 (Phổ thông): Không truy cập Kernel Node. Hãy chuyển sang Chế độ 2 (Shizuku) hoặc Chế độ 3 (Root) để đọc VBUS và chuẩn sạc chính xác hơn."
+            AppPrivilegeMode.ADB_SHIZUKU -> "Đang ở Chế độ 2 (ADB Shizuku): Hãy đảm bảo Shizuku đang chạy và đã cấp quyền cho ứng dụng."
+            AppPrivilegeMode.ROOT_FULL -> "Đang ở Chế độ 3 (Root): Thiết bị chưa cấp quyền 'su' hoặc ROM không xuất cờ giao thức."
+        }
+
         return when {
             pUsed >= 50f -> ProtocolDetectionResult(
                 isVerifiedFromKernel = false,
                 primaryStandard = "Sạc siêu nhanh công suất cao (>50W tại Pin)",
-                technicalExplanation = "SELinux chặn đọc node USB PD của Kernel. Với mức công suất nạp vào cell pin đạt ${String.format("%.1fW", pUsed)}, mạch sạc đang chạy chế độ Charge Pump dòng cao (PPS APDO / PD 3.1 hoặc chuẩn riêng của hãng).",
-                powerBasisNote = "$powerSourceStr • Lưu ý: Chưa thể phân biệt giữa PD 3.0/3.1/3.2 nếu không có quyền Root hoặc USB Tester.",
-                verificationBadge = "⚠️ SUY LUẬN TỪ P_BAT (SELINUX CHẶN SYSFS)"
+                technicalExplanation = "$modeHint Với công suất nạp vào cell pin đạt ${String.format("%.1fW", pUsed)}, mạch sạc đang chạy chế độ Charge Pump dòng cao.",
+                powerBasisNote = powerSourceStr,
+                verificationBadge = "⚠️ ƯỚC TÍNH TỪ P_BAT (${sys.activeMode.shortTitle})"
             )
             pUsed >= 22f -> ProtocolDetectionResult(
                 isVerifiedFromKernel = false,
                 primaryStandard = "Sạc nhanh USB-PD / PPS (Ngưỡng 22W–50W tại Pin)",
-                technicalExplanation = "SELinux chặn đọc cờ thương lượng PD. Công suất nạp phía pin đạt ${String.format("%.1fW", pUsed)} (tương đương đầu vào VBUS khoảng ${String.format("%.0fW–%.0fW", pUsed * 1.1f, pUsed * 1.2f)} sau hao phí chuyển đổi).",
-                powerBasisNote = "$powerSourceStr • Android API không cho biết củ sạc đang dùng PD 3.0, PD 3.1 hay PD 3.2.",
-                verificationBadge = "⚠️ SUY LUẬN TỪ P_BAT (CHƯA XÁC THỰC KERNEL)"
+                technicalExplanation = "$modeHint Công suất nạp phía pin đạt ${String.format("%.1fW", pUsed)} (tương đương đầu vào VBUS khoảng ${String.format("%.0fW–%.0fW", pUsed * 1.1f, pUsed * 1.2f)}).",
+                powerBasisNote = powerSourceStr,
+                verificationBadge = "⚠️ ƯỚC TÍNH TỪ P_BAT (${sys.activeMode.shortTitle})"
             )
             pUsed >= 12f -> ProtocolDetectionResult(
                 isVerifiedFromKernel = false,
-                primaryStandard = "Sạc nhanh cơ bản 15W–22W (PD 9V / QC 2.0–3.0 / PPS)",
-                technicalExplanation = "SELinux chặn đọc node USB. Công suất phía pin (${String.format("%.1fW", pUsed)}) tương ứng với cấu hình sạc nhanh 9V/2A–2.5A hoặc giai đoạn giảm dòng khi pin >60%.",
+                primaryStandard = "Sạc nhanh cơ bản 12W–22W (PD 9V / QC 2.0–3.0 / PPS)",
+                technicalExplanation = "$modeHint Công suất phía pin (${String.format("%.1fW", pUsed)}) tương ứng cấu hình 9V/2A hoặc giai đoạn giảm dòng khi pin >60%.",
                 powerBasisNote = powerSourceStr,
-                verificationBadge = "⚠️ SUY LUẬN TỪ P_BAT (CHƯA XÁC THỰC KERNEL)"
+                verificationBadge = "⚠️ ƯỚC TÍNH TỪ P_BAT (${sys.activeMode.shortTitle})"
             )
             else -> {
                 val isHighSoc = telemetry.levelPercent >= 75
@@ -657,12 +956,12 @@ object ChargerCatalogRepository {
                     isVerifiedFromKernel = false,
                     primaryStandard = if (isHighSoc) "Giai đoạn sạc bão hòa CV Stage (>75% Pin)" else "Sạc tiêu chuẩn 5V (<12W tại Pin)",
                     technicalExplanation = if (isHighSoc) {
-                        "Khi pin đạt ${telemetry.levelPercent}%, IC quản lý nguồn trong điện thoại chủ động hạ dòng nạp xuống ${String.format("%.2fA", telemetry.batCurrentAmp)} để bảo vệ cell pin dù đang cắm củ sạc nhanh."
+                        "Pin đã đạt ${telemetry.levelPercent}%, IC nguồn chủ động hạ dòng nạp xuống ${String.format("%.2fA", telemetry.batCurrentAmp)} để bảo vệ cell pin."
                     } else {
-                        "Công suất nạp thấp (${String.format("%.1fW", pUsed)}). Đang sạc chuẩn 5V cơ bản hoặc máy đang giảm dòng do nhiệt độ (${String.format("%.1f°C", telemetry.temperatureC)})."
+                        "$modeHint Công suất nạp hiện tại là ${String.format("%.1fW", pUsed)}."
                     },
                     powerBasisNote = powerSourceStr,
-                    verificationBadge = "⚠️ SUY LUẬN TỪ P_BAT"
+                    verificationBadge = "⚠️ ƯỚC TÍNH TỪ P_BAT"
                 )
             }
         }
@@ -670,13 +969,17 @@ object ChargerCatalogRepository {
 }
 
 // ============================================================================
-// 4. SINGLETON REPOSITORY (GIỮ TRẠNG THÁI QUA XOAY MÀN HÌNH + STREAMING CSV)
+// 5. SINGLETON REPOSITORY (GIỮ TRẠNG THÁI QUA XOAY MÀN HÌNH + STREAMING CSV)
 // ============================================================================
 
 object TelemetryRepository {
     private const val PREFS_NAME = "battery_monitor_v3_prefs"
     private const val KEY_SESSIONS = "saved_sessions_v3_json"
-    private const val MAX_UI_SAMPLES = 120 // Giới hạn 120 điểm trong RAM để không tràn bộ nhớ
+    private const val KEY_PRIVILEGE_MODE = "selected_privilege_mode_id"
+    private const val MAX_UI_SAMPLES = 120
+
+    private val _privilegeMode = MutableStateFlow(AppPrivilegeMode.NORMAL_USER)
+    val privilegeMode: StateFlow<AppPrivilegeMode> = _privilegeMode.asStateFlow()
 
     private val _telemetry = MutableStateFlow(BatteryTelemetry())
     val telemetry: StateFlow<BatteryTelemetry> = _telemetry.asStateFlow()
@@ -699,7 +1002,7 @@ object TelemetryRepository {
     private val _refreshIntervalMs = MutableStateFlow(1000L)
     val refreshIntervalMs: StateFlow<Long> = _refreshIntervalMs.asStateFlow()
 
-    private val _referenceCharger = MutableStateFlow(ChargerCatalogRepository.chargers[8]) // Mặc định Belkin WCA013 45W
+    private val _referenceCharger = MutableStateFlow(ChargerCatalogRepository.chargers[8])
     val referenceCharger: StateFlow<ChargerSpecProfile> = _referenceCharger.asStateFlow()
 
     private val _savedSessions = MutableStateFlow<List<ChargingSessionRecord>>(emptyList())
@@ -708,14 +1011,25 @@ object TelemetryRepository {
     private val _statusBanner = MutableStateFlow("")
     val statusBanner: StateFlow<String> = _statusBanner.asStateFlow()
 
-    // Biến phiên sạc đang chạy (Streaming trực tiếp ra file CSV trên đĩa)
     private var activeCsvFile: File? = null
     private var activeSessionRecord: ChargingSessionRecord? = null
     private var powerSumW: Double = 0.0
     private var lastSampleTimestampMs: Long = 0L
 
     fun initHistory(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedModeId = prefs.getInt(KEY_PRIVILEGE_MODE, AppPrivilegeMode.NORMAL_USER.id)
+        _privilegeMode.value = AppPrivilegeMode.fromId(savedModeId)
         _savedSessions.value = loadSessionsFromDisk(context)
+    }
+
+    fun setPrivilegeMode(context: Context, mode: AppPrivilegeMode) {
+        _privilegeMode.value = mode
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putInt(KEY_PRIVILEGE_MODE, mode.id).apply()
+        if (mode == AppPrivilegeMode.ADB_SHIZUKU) {
+            PrivilegedTelemetryEngine.requestShizukuPermission()
+        }
     }
 
     fun setCellSeriesCount(count: Int) {
@@ -737,21 +1051,18 @@ object TelemetryRepository {
     fun updateTelemetrySnapshot(context: Context, newSnap: BatteryTelemetry) {
         _telemetry.value = newSnap
 
-        // Cập nhật đồ thị (tối đa 60 điểm)
         val displayPower = newSnap.vbusInputPowerW ?: newSnap.effectiveBatPowerW
         val updatedHist = (_powerHistory.value + displayPower).takeLast(60)
         _powerHistory.value = updatedHist
 
         val proto = ChargerCatalogRepository.analyzeChargingProtocol(newSnap)
 
-        // Tự động mở / đóng phiên ghi CSV trực tiếp xuống đĩa
         if (newSnap.isCharging && _autoRecordEnabled.value && !_isRecording.value) {
             startStreamingSession(context, newSnap, proto.primaryStandard)
         } else if (!newSnap.isCharging && _isRecording.value) {
             stopAndFinalizeSession(context, newSnap.levelPercent)
         }
 
-        // Nếu đang ghi phiên sạc -> Append trực tiếp 1 dòng vào file CSV trên đĩa
         if (_isRecording.value && newSnap.isCharging) {
             appendSampleToCsv(newSnap, proto.primaryStandard)
         }
@@ -768,7 +1079,7 @@ object TelemetryRepository {
 
         runCatching {
             FileOutputStream(csvFile, false).bufferedWriter().use { writer ->
-                writer.write("Thoi_Gian,V_Bat(V),I_Bat(A),P_Bat_Est(W),So_Cell,V_Bus(V),I_Bus(A),P_Vbus(W),Nhiet_Do(C),Pin(%),Chuan_Sac\n")
+                writer.write("Thoi_Gian,Che_Do,V_Bat(V),I_Bat(A),P_Bat_Est(W),So_Cell,V_Bus(V),I_Bus(A),P_Vbus(W),Nhiet_Do(C),Pin(%),Chuan_Sac\n")
             }
         }
 
@@ -790,6 +1101,7 @@ object TelemetryRepository {
             accumulatedMah = 0f,
             detectedProtocol = protocolLabel,
             referenceChargerName = "${_referenceCharger.value.brand} ${_referenceCharger.value.modelCode}",
+            privilegeModeUsed = _privilegeMode.value.shortTitle,
             samplesCount = 0,
             csvFilePath = csvFile.absolutePath
         )
@@ -813,6 +1125,7 @@ object TelemetryRepository {
         rec.accumulatedMah += abs(snap.batCurrentMa) * deltaHours
         powerSumW += snap.effectiveBatPowerW
         rec.avgBatPowerW = (powerSumW / rec.samplesCount).toFloat()
+        rec.privilegeModeUsed = _privilegeMode.value.shortTitle
 
         if (snap.effectiveBatPowerW > rec.peakBatPowerW) rec.peakBatPowerW = snap.effectiveBatPowerW
         if (snap.vbusInputPowerW != null) {
@@ -822,15 +1135,15 @@ object TelemetryRepository {
         if (snap.temperatureC > rec.maxTempC) rec.maxTempC = snap.temperatureC
         rec.detectedProtocol = protocolLabel
 
-        // Ghi nối tiếp (Append) ngay lập tức xuống đĩa để nếu tắt máy đột ngột vẫn còn nguyên file CSV
         val vbusStr = snap.sysfsReport.vbusVoltageV?.let { String.format(Locale.US, "%.3f", it) } ?: "N/A"
         val ibusStr = snap.sysfsReport.ibusCurrentA?.let { String.format(Locale.US, "%.3f", it) } ?: "N/A"
         val pvbusStr = snap.vbusInputPowerW?.let { String.format(Locale.US, "%.2f", it) } ?: "N/A"
+        val modeTag = snap.sysfsReport.activeMode.shortTitle
 
         runCatching {
             FileOutputStream(csvFile, true).bufferedWriter().use { writer ->
                 writer.write(
-                    "$timeStr,${String.format(Locale.US, "%.3f", snap.batVoltageVolt)}," +
+                    "$timeStr,\"$modeTag\",${String.format(Locale.US, "%.3f", snap.batVoltageVolt)}," +
                             "${String.format(Locale.US, "%.3f", snap.batCurrentAmp)}," +
                             "${String.format(Locale.US, "%.2f", snap.effectiveBatPowerW)}," +
                             "${snap.cellSeriesCount}S,$vbusStr,$ibusStr,$pvbusStr," +
@@ -843,6 +1156,7 @@ object TelemetryRepository {
         val sampleObj = LogSample(
             timestampMs = nowMs,
             timeFormatted = timeStr,
+            modeName = modeTag,
             batVoltageV = snap.batVoltageVolt,
             batCurrentA = snap.batCurrentAmp,
             batPowerW = snap.effectiveBatPowerW,
@@ -892,6 +1206,7 @@ object TelemetryRepository {
             put("accumulatedMah", session.accumulatedMah.toDouble())
             put("detectedProtocol", session.detectedProtocol)
             put("referenceChargerName", session.referenceChargerName)
+            put("privilegeModeUsed", session.privilegeModeUsed)
             put("samplesCount", session.samplesCount)
             put("csvFilePath", session.csvFilePath)
         }
@@ -927,6 +1242,7 @@ object TelemetryRepository {
                         accumulatedMah = o.optDouble("accumulatedMah", 0.0).toFloat(),
                         detectedProtocol = o.optString("detectedProtocol"),
                         referenceChargerName = o.optString("referenceChargerName"),
+                        privilegeModeUsed = o.optString("privilegeModeUsed", "1. Phổ thông"),
                         samplesCount = o.optInt("samplesCount"),
                         csvFilePath = o.optString("csvFilePath")
                     )
@@ -936,9 +1252,6 @@ object TelemetryRepository {
         return list
     }
 
-    /**
-     * Xóa sạch cả JSON trong SharedPreferences VÀ toàn bộ các tệp .csv vật lý trên bộ nhớ
-     */
     fun deleteAllSessionsAndCsvFiles(context: Context) {
         val currentList = loadSessionsFromDisk(context)
         var deletedFilesCount = 0
@@ -948,7 +1261,6 @@ object TelemetryRepository {
                 if (f.exists() && f.delete()) deletedFilesCount++
             }
         }
-        // Quét thêm thư mục externalFilesDir để xóa các file ChargingLog_*.csv mồ côi
         runCatching {
             val dir = context.getExternalFilesDir(null) ?: context.filesDir
             dir.listFiles()?.forEach { file ->
@@ -966,7 +1278,7 @@ object TelemetryRepository {
 }
 
 // ============================================================================
-// 5. FOREGROUND SERVICE (GHI LOG BỀN BỈ KHI TẮT MÀN HÌNH / THOÁT RA NỀN)
+// 6. FOREGROUND SERVICE (GHI LOG BỀN BỈ KHI TẮT MÀN HÌNH / THOÁT RA NỀN)
 // ============================================================================
 
 class ChargingMonitorService : Service() {
@@ -976,7 +1288,7 @@ class ChargingMonitorService : Service() {
         const val ACTION_STOP_SERVICE = "com.example.batterypowermonitor.STOP_SERVICE"
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var monitorJob: Job? = null
 
     @Volatile private var latestBatVolt: Float = 0f
@@ -1066,7 +1378,9 @@ class ChargingMonitorService : Service() {
                 val cells = TelemetryRepository.cellSeriesCount.value
                 val batPowerW = latestBatVolt * currentAmp * cells
 
-                val sysReport = KernelSysfsScanner.probe()
+                val currentMode = TelemetryRepository.privilegeMode.value
+                val sysReport = PrivilegedTelemetryEngine.probeByMode(currentMode)
+
                 val vbusPowerW = if (sysReport.vbusVoltageV != null && sysReport.ibusCurrentA != null) {
                     sysReport.vbusVoltageV * sysReport.ibusCurrentA
                 } else null
@@ -1088,16 +1402,15 @@ class ChargingMonitorService : Service() {
 
                 TelemetryRepository.updateTelemetrySnapshot(applicationContext, snapshot)
 
-                // Cập nhật thanh thông báo mỗi ~2 giây để tiết kiệm pin
                 tickCount++
                 if (tickCount % 2 == 0) {
                     val statusPrefix = if (latestIsCharging) "⚡ Sạc" else "🔋 Xả"
                     val powerLabel = if (vbusPowerW != null) {
-                        "VBUS: ${String.format("%.1fW", vbusPowerW)} | Pin: ${String.format("%.1fW", batPowerW)}"
+                        "[${currentMode.shortTitle}] VBUS: ${String.format("%.1fW", vbusPowerW)} | Pin: ${String.format("%.1fW", batPowerW)}"
                     } else {
-                        "P_pin (ước tính): ${String.format("%.1fW", batPowerW)} (${String.format("%.2fV", latestBatVolt * cells)} × ${String.format("%.2fA", currentAmp)})"
+                        "[${currentMode.shortTitle}] P_pin: ${String.format("%.1fW", batPowerW)} (${String.format("%.2fV", latestBatVolt * cells)} × ${String.format("%.2fA", currentAmp)})"
                     }
-                    val notifText = "$statusPrefix • $powerLabel • ${latestLevelPct}% (${String.format("%.1f°C", latestTempC)})"
+                    val notifText = "$statusPrefix • $powerLabel • ${latestLevelPct}%"
                     runCatching {
                         notificationManager.notify(NOTIFICATION_ID, buildNotification(notifText))
                     }
@@ -1139,7 +1452,7 @@ class ChargingMonitorService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("Battery Power Monitor v3.0 (Đang chạy nền)")
+            .setContentTitle("Battery Power Monitor (Liquid Glass v3.2)")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -1159,7 +1472,487 @@ class ChargingMonitorService : Service() {
 }
 
 // ============================================================================
-// 6. MAIN ACTIVITY & TIỆN ÍCH CHIA SẺ FILE CSV / MỞ LINK NGUỒN
+// 7. HỆ THỐNG DESIGN ENGINE "LIQUID GLASS" (KÍNH LÔNG MỜ & PHẢN CHIẾU ÁNH SÁNG)
+// ============================================================================
+
+/**
+ * Nền động Liquid Mesh Orbs tạo hiệu ứng ánh sáng chuyển động phía dưới các tấm kính mờ
+ */
+@Composable
+fun LiquidGlassAmbientBackground(
+    isCharging: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "liquid_orbs")
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.283185f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 14000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "orb_phase"
+    )
+
+    Canvas(modifier = modifier.fillMaxSize().background(Color(0xFF050814))) {
+        val w = size.width
+        val h = size.height
+
+        // Quả cầu ánh sáng 1 (Emerald / Cyan chuyển động theo quỹ đạo Lissajous)
+        val orb1Center = Offset(
+            x = w * (0.25f + 0.18f * cos(phase)),
+            y = h * (0.22f + 0.14f * sin(phase))
+        )
+        val orb1Color = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(orb1Color.copy(alpha = 0.28f), Color.Transparent),
+                center = orb1Center,
+                radius = w.coerceAtLeast(h) * 0.45f
+            ),
+            center = orb1Center,
+            radius = w.coerceAtLeast(h) * 0.45f
+        )
+
+        // Quả cầu ánh sáng 2 (Electric Blue / Indigo)
+        val orb2Center = Offset(
+            x = w * (0.78f + 0.15f * sin(phase * 0.8f)),
+            y = h * (0.48f + 0.18f * cos(phase * 0.8f))
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFF0284C7).copy(alpha = 0.26f), Color.Transparent),
+                center = orb2Center,
+                radius = w.coerceAtLeast(h) * 0.48f
+            ),
+            center = orb2Center,
+            radius = w.coerceAtLeast(h) * 0.48f
+        )
+
+        // Quả cầu ánh sáng 3 (Violet / Magenta phản chiếu vùng đáy)
+        val orb3Center = Offset(
+            x = w * (0.45f + 0.22f * cos(phase + 2.1f)),
+            y = h * (0.82f + 0.12f * sin(phase + 2.1f))
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFF8B5CF6).copy(alpha = 0.22f), Color.Transparent),
+                center = orb3Center,
+                radius = w.coerceAtLeast(h) * 0.42f
+            ),
+            center = orb3Center,
+            radius = w.coerceAtLeast(h) * 0.42f
+        )
+    }
+}
+
+/**
+ * Tấm thẻ "Liquid Glass" (Kính lông mờ đa lớp + Viền phản quang Specular + Vệt khúc xạ đỉnh kính)
+ */
+@Composable
+fun LiquidGlassCard(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 22.dp,
+    tintColor: Color = Color(0xFF1E293B),
+    glassAlpha: Float = 0.52f,
+    specularAccent: Color = Color.White,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+    val baseMod = modifier
+        .shadow(
+            elevation = 14.dp,
+            shape = shape,
+            ambientColor = specularAccent.copy(alpha = 0.18f),
+            spotColor = specularAccent.copy(alpha = 0.25f)
+        )
+        .clip(shape)
+        .background(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.16f),
+                    tintColor.copy(alpha = glassAlpha),
+                    Color(0xFF090D1A).copy(alpha = (glassAlpha + 0.22f).coerceAtMost(0.88f))
+                ),
+                start = Offset(0f, 0f),
+                end = Offset(900f, 900f)
+            )
+        )
+        .border(
+            BorderStroke(
+                width = 1.2.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        specularAccent.copy(alpha = 0.65f),
+                        Color.White.copy(alpha = 0.18f),
+                        Color.White.copy(alpha = 0.04f),
+                        specularAccent.copy(alpha = 0.28f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(600f, 600f)
+                )
+            ),
+            shape = shape
+        )
+        .let { m -> if (onClick != null) m.clickable { onClick() } else m }
+
+    Box(modifier = baseMod) {
+        // Vệt phản chiếu ánh sáng (Specular Caustic Sheen) ở mép trên của lớp kính lông mờ
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .align(Alignment.TopCenter)
+        ) {
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        specularAccent.copy(alpha = 0.20f),
+                        Color.White.copy(alpha = 0.05f),
+                        Color.Transparent
+                    )
+                ),
+                cornerRadius = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx())
+            )
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            content = content
+        )
+    }
+}
+
+/**
+ * Khu vực Menu Liquid Glass nằm nổi ở lớp trên cùng (Top Z-Index Layer),
+ * phản chiếu ánh sáng động qua hiệu ứng kính lông mờ xuống các thành phần bên dưới.
+ */
+@Composable
+fun LiquidGlassTopMenuOverlay(
+    selectedTab: Int,
+    onSelectTab: (Int) -> Unit,
+    isTabletLandscape: Boolean,
+    splitLeftPane: Int,
+    splitRightPane: Int,
+    onSplitLeftChange: (Int) -> Unit,
+    onSplitRightChange: (Int) -> Unit,
+    privilegeMode: AppPrivilegeMode,
+    isRecording: Boolean,
+    samplesCount: Int,
+    savedSessionsCount: Int,
+    isCharging: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "menu_shimmer")
+    val shimmerOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1200f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 6000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shimmer_x"
+    )
+
+    val glowColor = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
+    val menuShape = RoundedCornerShape(26.dp)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .shadow(
+                elevation = 24.dp,
+                shape = menuShape,
+                ambientColor = glowColor.copy(alpha = 0.35f),
+                spotColor = glowColor.copy(alpha = 0.45f)
+            )
+            .clip(menuShape)
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.24f),
+                        Color(0xFF1E293B).copy(alpha = 0.68f),
+                        Color(0xFF0F172A).copy(alpha = 0.76f),
+                        glowColor.copy(alpha = 0.18f)
+                    ),
+                    start = Offset(shimmerOffset * 0.3f, 0f),
+                    end = Offset(shimmerOffset + 500f, 320f)
+                )
+            )
+            .border(
+                BorderStroke(
+                    width = 1.5.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.85f),
+                            glowColor.copy(alpha = 0.55f),
+                            Color.White.copy(alpha = 0.15f),
+                            Color(0xFF38BDF8).copy(alpha = 0.50f)
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(1000f, 200f)
+                    )
+                ),
+                shape = menuShape
+            )
+    ) {
+        // Lớp phản xạ ánh sáng đỉnh kính (Top Specular Highlight Strip)
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .align(Alignment.TopCenter)
+        ) {
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.White.copy(alpha = 0.75f),
+                        glowColor.copy(alpha = 0.65f),
+                        Color.White.copy(alpha = 0.75f),
+                        Color.Transparent
+                    )
+                ),
+                start = Offset(size.width * 0.08f, 2.dp.toPx()),
+                end = Offset(size.width * 0.92f, 2.dp.toPx()),
+                strokeWidth = 2.5.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        glowColor.copy(alpha = 0.45f),
+                                        Color.White.copy(alpha = 0.15f)
+                                    )
+                                )
+                            )
+                            .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "⚡", fontSize = 17.sp)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = if (isTabletLandscape) {
+                                "Battery Power Monitor • Liquid Glass Dual-Window (Tablet Landscape)"
+                            } else {
+                                "Battery Power Monitor • Liquid Glass UI"
+                            },
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (isTabletLandscape) {
+                                "Bố cục cửa sổ song song • Lớp kính lông mờ phản chiếu ánh sáng thời gian thực"
+                            } else {
+                                "3 Chế độ: Phổ thông • ADB (Shizuku) • Root Toàn Quyền"
+                            },
+                            color = Color(0xFFBAE6FD),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Viên thuốc trạng thái phản quang
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (isRecording) Color(0xFF00E676).copy(alpha = 0.25f)
+                            else Color.White.copy(alpha = 0.12f)
+                        )
+                        .border(
+                            1.dp,
+                            if (isRecording) Color(0xFF00E676).copy(alpha = 0.7f)
+                            else Color.White.copy(alpha = 0.35f),
+                            RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (isRecording) Color(0xFF00E676) else Color(0xFF38BDF8))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isRecording) "REC CSV ($samplesCount)" else privilegeMode.shortTitle,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Thanh điều hướng kính mờ:
+            // - Ở màn hình dọc / điện thoại: Chọn 1 trong 3 Tab.
+            // - Ở chế độ Máy tính bảng xoay ngang (Parallel Split-Window): Cho phép chọn nhanh tổ hợp Cửa sổ Trái & Cửa sổ Phải hoặc mở cả 3.
+            val paneTitles = listOf(
+                0 to "⚡ Đo & Chế Độ",
+                1 to "🔌 Tra Cứu Củ Sạc",
+                2 to "📈 Nhật Ký CSV ($savedSessionsCount)"
+            )
+
+            if (!isTabletLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    paneTitles.forEach { (idx, title) ->
+                        val active = selectedTab == idx
+                        LiquidGlassPillButton(
+                            text = title,
+                            isSelected = active,
+                            accentColor = glowColor,
+                            onClick = { onSelectTab(idx) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            } else {
+                // Chế độ Tablet / Xoay ngang: Điều khiển Cửa sổ Song Song (Parallel Windows)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Cửa sổ Trái:",
+                            color = Color(0xFFBAE6FD),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        paneTitles.forEach { (idx, title) ->
+                            LiquidGlassPillButton(
+                                text = title,
+                                isSelected = splitLeftPane == idx,
+                                accentColor = Color(0xFF00E676),
+                                onClick = { onSplitLeftChange(idx) }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Cửa sổ Phải:",
+                            color = Color(0xFFBAE6FD),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        paneTitles.forEach { (idx, title) ->
+                            LiquidGlassPillButton(
+                                text = title,
+                                isSelected = splitRightPane == idx,
+                                accentColor = Color(0xFF38BDF8),
+                                onClick = { onSplitRightChange(idx) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LiquidGlassPillButton(
+    text: String,
+    isSelected: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                brush = if (isSelected) {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.30f),
+                            accentColor.copy(alpha = 0.38f),
+                            accentColor.copy(alpha = 0.18f)
+                        )
+                    )
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.08f),
+                            Color(0xFF0F172A).copy(alpha = 0.45f)
+                        )
+                    )
+                }
+            )
+            .border(
+                width = if (isSelected) 1.3.dp else 1.dp,
+                brush = Brush.linearGradient(
+                    colors = if (isSelected) {
+                        listOf(Color.White.copy(alpha = 0.9f), accentColor.copy(alpha = 0.7f))
+                    } else {
+                        listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f))
+                    }
+                ),
+                shape = shape
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+// ============================================================================
+// 8. MAIN ACTIVITY & BỐ CỤC ĐÁP ỨNG (PORTRAIT vs TABLET PARALLEL WINDOWS)
 // ============================================================================
 
 fun shareOrOpenCsvFile(context: Context, csvPath: String) {
@@ -1192,8 +1985,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         TelemetryRepository.initHistory(applicationContext)
-
-        // Khởi chạy Foreground Service để không mất dữ liệu khi xoay màn hình hoặc tắt màn hình
         startMonitoringForegroundService()
 
         setContent {
@@ -1201,7 +1992,7 @@ class MainActivity : ComponentActivity() {
                 colorScheme = darkColorScheme(
                     primary = Color(0xFF00E676),
                     secondary = Color(0xFF38BDF8),
-                    background = Color(0xFF0B1120),
+                    background = Color(0xFF050814),
                     surface = Color(0xFF1E293B)
                 )
             ) {
@@ -1230,8 +2021,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BatteryPowerMonitorApp() {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
 
-    // Xin quyền POST_NOTIFICATIONS trên Android 13+ để hiển thị Notification của Foreground Service
+    // Nhận diện chế độ Máy tính bảng hoặc màn hình xoay ngang (Parallel Split-Window Mode)
+    val isTabletOrLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            configuration.screenWidthDp >= 600
+
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = {}
@@ -1246,7 +2041,7 @@ fun BatteryPowerMonitorApp() {
         }
     }
 
-    // Lắng nghe toàn bộ StateFlow từ Singleton TelemetryRepository (Sống qua xoay màn hình 100%)
+    val privilegeMode by TelemetryRepository.privilegeMode.collectAsState()
     val telemetry by TelemetryRepository.telemetry.collectAsState()
     val powerHistory by TelemetryRepository.powerHistory.collectAsState()
     val recentSamples by TelemetryRepository.recentSamples.collectAsState()
@@ -1259,145 +2054,153 @@ fun BatteryPowerMonitorApp() {
     val statusBanner by TelemetryRepository.statusBanner.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    var splitLeftPane by remember { mutableIntStateOf(0) }  // Mặc định Cửa sổ Trái: Đo & Chế độ
+    var splitRightPane by remember { mutableIntStateOf(1) } // Mặc định Cửa sổ Phải: Tra cứu Củ sạc / Nhật ký CSV
     var selectedBrandFilter by remember { mutableStateOf("Tất cả") }
 
     val protocolResult = remember(telemetry) {
         ChargerCatalogRepository.analyzeChargingProtocol(telemetry)
     }
 
-    Scaffold(
-        topBar = {
-            Column(
+    val topOverlayClearance = if (isTabletOrLandscape) 118.dp else 122.dp
+
+    @Composable
+    fun RenderPaneByIndex(paneIndex: Int, topPadding: Dp) {
+        when (paneIndex) {
+            0 -> RealtimeDashboardTab(
+                privilegeMode = privilegeMode,
+                onPrivilegeModeChange = { TelemetryRepository.setPrivilegeMode(context, it) },
+                telemetry = telemetry,
+                protocolResult = protocolResult,
+                referenceCharger = referenceCharger,
+                cellSeriesCount = cellSeriesCount,
+                onCellSeriesChange = { TelemetryRepository.setCellSeriesCount(it) },
+                powerHistory = powerHistory,
+                refreshIntervalMs = refreshIntervalMs,
+                onIntervalChange = { TelemetryRepository.setRefreshInterval(it) },
+                onOpenChargerCatalog = {
+                    if (isTabletOrLandscape) splitRightPane = 1 else selectedTab = 1
+                },
+                topOverlayPadding = topPadding
+            )
+            1 -> ChargerDatabaseTab(
+                selectedBrand = selectedBrandFilter,
+                onBrandChange = { selectedBrandFilter = it },
+                referenceCharger = referenceCharger,
+                onSelectCharger = { TelemetryRepository.setReferenceCharger(it) },
+                topOverlayPadding = topPadding
+            )
+            else -> ChargingLogHistoryTab(
+                autoRecordCharging = autoRecordEnabled,
+                onAutoRecordChange = { TelemetryRepository.setAutoRecord(it) },
+                isRecordingSession = isRecording,
+                recentSamples = recentSamples,
+                statusBanner = statusBanner,
+                savedSessions = savedSessions,
+                onManualStartOrStop = {
+                    if (isRecording) {
+                        TelemetryRepository.stopAndFinalizeSession(context, telemetry.levelPercent)
+                    } else {
+                        TelemetryRepository.startStreamingSession(
+                            context,
+                            telemetry,
+                            protocolResult.primaryStandard
+                        )
+                    }
+                },
+                onShareCsv = { path -> shareOrOpenCsvFile(context, path) },
+                onClearHistory = { TelemetryRepository.deleteAllSessionsAndCsvFiles(context) },
+                topOverlayPadding = topPadding
+            )
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // LỚP 0 (DƯỚI CÙNG): Nền ánh sáng Liquid Glass chuyển động liên tục
+        LiquidGlassAmbientBackground(isCharging = telemetry.isCharging)
+
+        // LỚP 1 (GIỮA): Nội dung ứng dụng (1 cửa sổ ở Portrait hoặc 2 cửa sổ song song ở Tablet Landscape)
+        if (!isTabletOrLandscape) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                RenderPaneByIndex(paneIndex = selectedTab, topPadding = topOverlayClearance)
+            }
+        } else {
+            // BỐ CỤC CỬA SỔ SONG SONG DÀNH CHO MÁY TÍNH BẢNG / MÀN HÌNH XOAY NGANG
+            Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0F172A))
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Cửa sổ Song Song Bên Trái
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Battery Power Monitor v3.0",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = "Đo tách bạch P_pin & VBUS • Chạy nền Foreground Service",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = if (isRecording) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF334155)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isRecording) Color(0xFF00E676) else Color(0xFF94A3B8))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isRecording) "GHI CSV (${recentSamples.size})" else "CHẠY NỀN",
-                                color = if (isRecording) Color(0xFF00E676) else Color(0xFFCBD5E1),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    RenderPaneByIndex(paneIndex = splitLeftPane, topPadding = topOverlayClearance)
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                // Thanh phân tách phát sáng kiểu sợi quang học (Liquid Optical Divider)
+                Box(
+                    modifier = Modifier
+                        .width(1.5.dp)
+                        .fillMaxHeight()
+                        .padding(top = topOverlayClearance, bottom = 16.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.45f),
+                                    Color(0xFF38BDF8).copy(alpha = 0.65f),
+                                    Color.White.copy(alpha = 0.45f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
 
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color(0xFF1E293B),
-                    contentColor = Color(0xFF00E676),
-                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                // Cửa sổ Song Song Bên Phải
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
                 ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text("⚡ Đo Thực Tế", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text("🔌 Tra Cứu Củ Sạc", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-                    )
-                    Tab(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        text = { Text("📈 File CSV (${savedSessions.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-                    )
+                    RenderPaneByIndex(paneIndex = splitRightPane, topPadding = topOverlayClearance)
                 }
             }
         }
-    ) { innerPadding ->
-        Box(
+
+        // LỚP 2 (TRÊN CÙNG - Z-INDEX CAO NHẤT): Khu vực Menu Liquid Glass nổi trên cùng,
+        // phản chiếu ánh sáng thông qua hiệu ứng kính lông mờ xuống các lớp đồ họa bên dưới
+        LiquidGlassTopMenuOverlay(
+            selectedTab = selectedTab,
+            onSelectTab = { selectedTab = it },
+            isTabletLandscape = isTabletOrLandscape,
+            splitLeftPane = splitLeftPane,
+            splitRightPane = splitRightPane,
+            onSplitLeftChange = { splitLeftPane = it },
+            onSplitRightChange = { splitRightPane = it },
+            privilegeMode = privilegeMode,
+            isRecording = isRecording,
+            samplesCount = recentSamples.size,
+            savedSessionsCount = savedSessions.size,
+            isCharging = telemetry.isCharging,
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            when (selectedTab) {
-                0 -> RealtimeDashboardTab(
-                    telemetry = telemetry,
-                    protocolResult = protocolResult,
-                    referenceCharger = referenceCharger,
-                    cellSeriesCount = cellSeriesCount,
-                    onCellSeriesChange = { TelemetryRepository.setCellSeriesCount(it) },
-                    powerHistory = powerHistory,
-                    refreshIntervalMs = refreshIntervalMs,
-                    onIntervalChange = { TelemetryRepository.setRefreshInterval(it) },
-                    onOpenChargerCatalog = { selectedTab = 1 }
-                )
-                1 -> ChargerDatabaseTab(
-                    selectedBrand = selectedBrandFilter,
-                    onBrandChange = { selectedBrandFilter = it },
-                    referenceCharger = referenceCharger,
-                    onSelectCharger = { TelemetryRepository.setReferenceCharger(it) }
-                )
-                2 -> ChargingLogHistoryTab(
-                    autoRecordCharging = autoRecordEnabled,
-                    onAutoRecordChange = { TelemetryRepository.setAutoRecord(it) },
-                    isRecordingSession = isRecording,
-                    recentSamples = recentSamples,
-                    statusBanner = statusBanner,
-                    savedSessions = savedSessions,
-                    onManualStartOrStop = {
-                        if (isRecording) {
-                            TelemetryRepository.stopAndFinalizeSession(context, telemetry.levelPercent)
-                        } else {
-                            TelemetryRepository.startStreamingSession(
-                                context,
-                                telemetry,
-                                protocolResult.primaryStandard
-                            )
-                        }
-                    },
-                    onShareCsv = { path -> shareOrOpenCsvFile(context, path) },
-                    onClearHistory = { TelemetryRepository.deleteAllSessionsAndCsvFiles(context) }
-                )
-            }
-        }
+                .align(Alignment.TopCenter)
+                .zIndex(10f)
+        )
     }
 }
 
 // ============================================================================
-// TAB 1: ĐO CÔNG SUẤT MINH BẠCH (PHÍA CELL PIN vs PHÍA CỔNG VBUS)
+// TAB 1: BỘ CHỌN 3 CHẾ ĐỘ + BẢNG ĐO CÔNG SUẤT THỜI GIAN THỰC (LIQUID GLASS)
 // ============================================================================
 
 @Composable
 fun RealtimeDashboardTab(
+    privilegeMode: AppPrivilegeMode,
+    onPrivilegeModeChange: (AppPrivilegeMode) -> Unit,
     telemetry: BatteryTelemetry,
     protocolResult: ProtocolDetectionResult,
     referenceCharger: ChargerSpecProfile,
@@ -1406,21 +2209,117 @@ fun RealtimeDashboardTab(
     powerHistory: List<Float>,
     refreshIntervalMs: Long,
     onIntervalChange: (Long) -> Unit,
-    onOpenChargerCatalog: () -> Unit
+    onOpenChargerCatalog: () -> Unit,
+    topOverlayPadding: Dp = 120.dp
 ) {
+    val context = LocalContext.current
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 12.dp)
+        contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
     ) {
-        // 1. Thẻ Công suất chính — Ghi nhãn rõ bản chất vật lý (Battery-side vs VBUS-side)
+        // 1. Thẻ Chọn 3 Chế Độ Hoạt Động (Liquid Glass Card)
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+            LiquidGlassCard(
+                specularAccent = Color(privilegeMode.badgeColorHex)
+            ) {
+                Column(modifier = Modifier.padding(15.dp)) {
+                    Text(
+                        text = "CHỌN CHẾ ĐỘ QUYỀN TRUY CẬP HỆ THỐNG (3 CHẾ ĐỘ)",
+                        color = Color(0xFF7DD3FC),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AppPrivilegeMode.entries.forEach { mode ->
+                            LiquidGlassPillButton(
+                                text = mode.shortTitle,
+                                isSelected = privilegeMode == mode,
+                                accentColor = Color(mode.badgeColorHex),
+                                onClick = { onPrivilegeModeChange(mode) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF090D1A).copy(alpha = 0.58f))
+                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = privilegeMode.fullTitle,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = privilegeMode.description,
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Trạng thái: ${telemetry.sysfsReport.privilegeStatusText}",
+                                color = if (telemetry.sysfsReport.isPrivilegeGranted) Color(0xFF00E676) else Color(0xFFFBBF24),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            if (telemetry.sysfsReport.extraDeveloperMetrics.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "🛠️ ${telemetry.sysfsReport.extraDeveloperMetrics}",
+                                    color = Color(0xFF7DD3FC),
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            if (privilegeMode == AppPrivilegeMode.ADB_SHIZUKU && !telemetry.sysfsReport.isPrivilegeGranted) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    LiquidGlassPillButton(
+                                        text = "Cấp quyền Shizuku",
+                                        isSelected = true,
+                                        accentColor = Color(0xFF0284C7),
+                                        onClick = { PrivilegedTelemetryEngine.requestShizukuPermission() }
+                                    )
+                                    LiquidGlassPillButton(
+                                        text = "Tải Shizuku ↗",
+                                        isSelected = false,
+                                        accentColor = Color(0xFF38BDF8),
+                                        onClick = { openExternalUrl(context, "https://shizuku.rikka.app/download/") }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Thẻ Công suất chính — Liquid Glass Hero Card
+        item {
+            val statusColor = if (telemetry.isCharging) Color(0xFF00E676) else Color(0xFFFFB74D)
+            LiquidGlassCard(
+                cornerRadius = 26.dp,
+                specularAccent = statusColor,
+                glassAlpha = 0.56f
             ) {
                 Column(
                     modifier = Modifier
@@ -1428,12 +2327,11 @@ fun RealtimeDashboardTab(
                         .padding(18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    val statusColor = if (telemetry.isCharging) Color(0xFF00E676) else Color(0xFFFFB74D)
                     Text(
                         text = if (telemetry.isCharging) "⚡ ĐANG SẠC (${telemetry.plugType})" else "🔋 ĐANG XẢ PIN",
                         color = statusColor,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.height(6.dp))
 
@@ -1441,50 +2339,56 @@ fun RealtimeDashboardTab(
                     Text(
                         text = String.format("%.2f W", animatedBatPower),
                         color = Color.White,
-                        fontSize = 44.sp,
+                        fontSize = 46.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
-                    Surface(
-                        color = Color(0xFF0F172A),
-                        shape = RoundedCornerShape(8.dp)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.10f))
+                            .border(1.dp, Color(0xFFFBBF24).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "CÔNG SUẤT ƯỚC TÍNH TỪ PHÍA CELL PIN (P_bat = V_bat × I_bat × ${cellSeriesCount}S)",
-                            color = Color(0xFFFBBF24),
+                            color = Color(0xFFFDE68A),
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Hiển thị trạng thái đọc VBUS đầu vào thật từ sysfs
-                    Surface(
-                        color = Color(0xFF0F172A),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF090D1A).copy(alpha = 0.58f))
+                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                            .padding(10.dp)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column {
                             if (telemetry.vbusInputPowerW != null) {
                                 Text(
-                                    text = "✓ Công suất cổng sạc VBUS đo được: ${String.format("%.2f W", telemetry.vbusInputPowerW)} " +
+                                    text = "✓ Công suất cổng sạc VBUS (${privilegeMode.shortTitle}): ${String.format("%.2f W", telemetry.vbusInputPowerW)} " +
                                             "(${String.format("%.2fV", telemetry.sysfsReport.vbusVoltageV)} × ${String.format("%.2fA", telemetry.sysfsReport.ibusCurrentA)})",
                                     color = Color(0xFF00E676),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             } else {
+                                val reasonText = when (privilegeMode) {
+                                    AppPrivilegeMode.NORMAL_USER ->
+                                        "ℹ️ Bạn đang ở Chế độ 1 (Phổ thông): Ứng dụng chỉ tính công suất từ phía cell pin (luôn thấp hơn công suất đầu ra củ sạc khoảng 10–20% do hao phí mạch sạc). Hãy chọn Chế độ 2 (Shizuku) hoặc Chế độ 3 (Root) để đọc VBUS."
+                                    AppPrivilegeMode.ADB_SHIZUKU ->
+                                        "ℹ️ Chế độ 2 (ADB Shizuku): Chưa lấy được VBUS/IBUS (Hãy bật Shizuku hoặc cắm sạc để đọc Max Charging Voltage/Current từ dumpsys)."
+                                    AppPrivilegeMode.ROOT_FULL ->
+                                        "ℹ️ Chế độ 3 (Root): Thiết bị chưa cấp quyền su hoặc mạch PMIC không xuất thông số IBUS."
+                                }
                                 Text(
-                                    text = "ℹ️ Không đọc được điện áp/dòng cổng sạc VBUS (5V/9V/15V/20V) do SELinux trên máy không Root chặn đọc sysfs.",
-                                    color = Color(0xFFCBD5E1),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "• Số W ở trên là công suất đi vào cell pin sau mạch hạ áp/Charge Pump (luôn thấp hơn công suất đầu vào củ sạc khoảng 10–20% do hao phí nhiệt, hoặc thấp hơn 50% nếu máy dùng pin kép 2S mà bạn đang để cấu hình 1S). Muốn đo chuẩn công suất đầu ra củ sạc cần dùng USB Tester phần cứng.",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 10.sp
+                                    text = reasonText,
+                                    color = Color(0xFFE2E8F0),
+                                    fontSize = 11.sp
                                 )
                             }
                         }
@@ -1492,7 +2396,6 @@ fun RealtimeDashboardTab(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Công tắc chọn cấu hình Pin Đơn (1S ~4.4V) hoặc Pin Kép nối tiếp (2S ~8.8V)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1500,20 +2403,22 @@ fun RealtimeDashboardTab(
                     ) {
                         Text(
                             text = "Cấu trúc cell pin của máy:",
-                            color = Color(0xFF94A3B8),
+                            color = Color(0xFFBAE6FD),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = cellSeriesCount == 1,
-                                onClick = { onCellSeriesChange(1) },
-                                label = { Text("1S (Pin đơn ~4.4V)", fontSize = 11.sp) }
+                            LiquidGlassPillButton(
+                                text = "1S (Pin đơn ~4.4V)",
+                                isSelected = cellSeriesCount == 1,
+                                accentColor = Color(0xFF38BDF8),
+                                onClick = { onCellSeriesChange(1) }
                             )
-                            FilterChip(
-                                selected = cellSeriesCount == 2,
-                                onClick = { onCellSeriesChange(2) },
-                                label = { Text("2S (Pin kép ×2)", fontSize = 11.sp) }
+                            LiquidGlassPillButton(
+                                text = "2S (Pin kép ×2)",
+                                isSelected = cellSeriesCount == 2,
+                                accentColor = Color(0xFF00E676),
+                                onClick = { onCellSeriesChange(2) }
                             )
                         }
                     }
@@ -1521,15 +2426,12 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 2. Thẻ Nhận diện Chuẩn Sạc (Phân biệt rõ: Xác thực Kernel vs Suy luận từ P_bat)
+        // 3. Thẻ Nhận diện Chuẩn Sạc (Liquid Glass)
         item {
-            val cardBg = if (protocolResult.isVerifiedFromKernel) Color(0xFF064E3B) else Color(0xFF1E293B)
-            val badgeBg = if (protocolResult.isVerifiedFromKernel) Color(0xFF059669) else Color(0xFFD97706)
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = cardBg)
+            val accent = if (protocolResult.isVerifiedFromKernel) Color(0xFF00E676) else Color(0xFFF59E0B)
+            LiquidGlassCard(
+                tintColor = if (protocolResult.isVerifiedFromKernel) Color(0xFF064E3B) else Color(0xFF1E293B),
+                specularAccent = accent
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -1539,20 +2441,22 @@ fun RealtimeDashboardTab(
                     ) {
                         Text(
                             text = "CHẨN ĐOÁN CƠ CHẾ SẠC",
-                            color = Color(0xFF38BDF8),
+                            color = Color(0xFF7DD3FC),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
-                        Surface(
-                            color = badgeBg,
-                            shape = RoundedCornerShape(6.dp)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(accent.copy(alpha = 0.28f))
+                                .border(1.dp, accent.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = protocolResult.verificationBadge,
                                 color = Color.White,
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -1573,14 +2477,14 @@ fun RealtimeDashboardTab(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = protocolResult.technicalExplanation,
-                        color = Color(0xFFCBD5E1),
+                        color = Color(0xFFE2E8F0),
                         fontSize = 11.sp
                     )
                 }
             }
         }
 
-        // 3. Lưới thông số Điện áp Cell Pin (EXTRA_VOLTAGE) & Dòng điện nạp Pin (CURRENT_NOW)
+        // 4. Lưới thông số Điện áp Cell Pin & Dòng điện nạp Pin
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1591,48 +2495,44 @@ fun RealtimeDashboardTab(
                     title = "Dòng nạp tại Pin (I_bat)",
                     mainValue = String.format("%.3f A", telemetry.batCurrentAmp),
                     subValue = String.format("%.0f mA (Sau mạch sạc)", telemetry.batCurrentMa),
-                    accentColor = Color(0xFF29B6F6)
+                    accentColor = Color(0xFF38BDF8)
                 )
                 MetricCard(
                     modifier = Modifier.weight(1f),
                     title = "Điện áp Cell Pin (V_bat)",
                     mainValue = String.format("%.3f V", telemetry.batVoltageVolt * cellSeriesCount),
                     subValue = "1 Cell: ${String.format("%.0f mV", telemetry.batVoltageVolt * 1000)} (${cellSeriesCount}S)",
-                    accentColor = Color(0xFFAB47BC)
+                    accentColor = Color(0xFFC084FC)
                 )
             }
         }
 
-        // 4. Bảng kiểm tra trực tiếp trạng thái đọc Kernel Sysfs (Minh bạch 100%)
+        // 5. Bảng kiểm tra trực tiếp trạng thái đọc Node theo Chế độ
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
-            ) {
+            LiquidGlassCard(specularAccent = Color(0xFF38BDF8)) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "TRẠNG THÁI ĐỌC NODE PHẦN CỨNG KERNEL (/sys/class/power_supply)",
-                        color = Color(0xFF94A3B8),
+                        text = "THÔNG SỐ TRUY XUẤT THEO CHẾ ĐỘ: ${privilegeMode.shortTitle.uppercase()}",
+                        color = Color(0xFFBAE6FD),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     SysfsStatusRow(
                         label = "Điện áp cổng VBUS:",
-                        value = telemetry.sysfsReport.vbusVoltageV?.let { String.format("%.2f V", it) } ?: "Bị chặn (SELinux)",
+                        value = telemetry.sysfsReport.vbusVoltageV?.let { String.format("%.2f V", it) } ?: "Không có (Hạn chế quyền)",
                         path = telemetry.sysfsReport.vbusSourcePath,
                         isOk = telemetry.sysfsReport.vbusVoltageV != null
                     )
                     SysfsStatusRow(
                         label = "Dòng đầu vào IBUS:",
-                        value = telemetry.sysfsReport.ibusCurrentA?.let { String.format("%.2f A", it) } ?: "Bị chặn (SELinux)",
+                        value = telemetry.sysfsReport.ibusCurrentA?.let { String.format("%.2f A", it) } ?: "Không có (Hạn chế quyền)",
                         path = telemetry.sysfsReport.ibusSourcePath,
                         isOk = telemetry.sysfsReport.ibusCurrentA != null
                     )
                     SysfsStatusRow(
                         label = "Cờ giao thức PD/QC:",
-                        value = telemetry.sysfsReport.kernelProtocolRaw.ifEmpty { "Bị chặn (SELinux)" },
+                        value = telemetry.sysfsReport.kernelProtocolRaw.ifEmpty { "Không có (Hạn chế quyền)" },
                         path = telemetry.sysfsReport.kernelProtocolPath,
                         isOk = telemetry.sysfsReport.isKernelProtocolVerified
                     )
@@ -1640,14 +2540,11 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 5. Thẻ Củ Sạc Đối Chiếu Thủ Công (Không tự gán vòng tròn)
+        // 6. Thẻ Củ Sạc Đối Chiếu Thủ Công
         item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenChargerCatalog() },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+            LiquidGlassCard(
+                specularAccent = Color(referenceCharger.accentColorHex),
+                onClick = onOpenChargerCatalog
             ) {
                 Row(
                     modifier = Modifier
@@ -1668,13 +2565,13 @@ fun RealtimeDashboardTab(
                         ) {
                             Text(
                                 text = "CỦ SẠC ĐỐI CHIẾU THAM KHẢO (CHỌN TAY)",
-                                color = Color(0xFFFBBF24),
+                                color = Color(0xFFFDE68A),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
                                 text = "Đổi mẫu ➔",
-                                color = Color(0xFF38BDF8),
+                                color = Color(0xFF7DD3FC),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1694,7 +2591,7 @@ fun RealtimeDashboardTab(
                         )
                         Text(
                             text = "PDO/PPS của củ: ${referenceCharger.pdoProfiles}",
-                            color = Color(0xFF94A3B8),
+                            color = Color(0xFFCBD5E1),
                             fontSize = 11.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -1704,7 +2601,7 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 6. Lưới thông số phụ: Mức pin, Nhiệt độ, Sức khỏe
+        // 7. Lưới thông số phụ: Mức pin, Nhiệt độ, Sức khỏe
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1728,14 +2625,13 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 7. Biểu đồ công suất thời gian thực
+        // 8. Biểu đồ công suất thời gian thực
         item {
-            Card(
+            LiquidGlassCard(
+                specularAccent = Color(0xFF00E676),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(185.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+                    .height(190.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -1754,7 +2650,7 @@ fun RealtimeDashboardTab(
                         )
                         Text(
                             text = "Chu kỳ: ${refreshIntervalMs}ms",
-                            color = Color(0xFF94A3B8),
+                            color = Color(0xFFBAE6FD),
                             fontSize = 11.sp
                         )
                     }
@@ -1767,19 +2663,20 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 8. Tùy chỉnh tốc độ lấy mẫu
+        // 9. Tùy chỉnh tốc độ lấy mẫu
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Chu kỳ lấy mẫu:", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                Text("Chu kỳ lấy mẫu:", color = Color(0xFFBAE6FD), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 listOf(500L to "0.5s", 1000L to "1.0s", 2000L to "2.0s").forEach { (ms, label) ->
-                    FilterChip(
-                        selected = refreshIntervalMs == ms,
-                        onClick = { onIntervalChange(ms) },
-                        label = { Text(label, fontSize = 12.sp) }
+                    LiquidGlassPillButton(
+                        text = label,
+                        isSelected = refreshIntervalMs == ms,
+                        accentColor = Color(0xFF00E676),
+                        onClick = { onIntervalChange(ms) }
                     )
                 }
             }
@@ -1794,17 +2691,17 @@ fun SysfsStatusRow(label: String, value: String, path: String, isOk: Boolean) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = label, color = Color(0xFFCBD5E1), fontSize = 11.sp)
+            Text(text = label, color = Color(0xFFE2E8F0), fontSize = 11.sp)
             Text(
                 text = value,
-                color = if (isOk) Color(0xFF00E676) else Color(0xFFF87171),
+                color = if (isOk) Color(0xFF00E676) else Color(0xFFFCA5A5),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
         }
         Text(
             text = path,
-            color = Color(0xFF64748B),
+            color = Color(0xFF94A3B8),
             fontSize = 9.sp,
             fontFamily = FontFamily.Monospace
         )
@@ -1812,7 +2709,7 @@ fun SysfsStatusRow(label: String, value: String, path: String, isOk: Boolean) {
 }
 
 // ============================================================================
-// TAB 2: THƯ VIỆN TRA CỨU CỦ SẠC & NGUỒN TEARDOWN KIỂM CHỨNG
+// TAB 2: THƯ VIỆN TRA CỨU CỦ SẠC & NGUỒN TEARDOWN KIỂM CHỨNG (LIQUID GLASS)
 // ============================================================================
 
 @Composable
@@ -1820,7 +2717,8 @@ fun ChargerDatabaseTab(
     selectedBrand: String,
     onBrandChange: (String) -> Unit,
     referenceCharger: ChargerSpecProfile,
-    onSelectCharger: (ChargerSpecProfile) -> Unit
+    onSelectCharger: (ChargerSpecProfile) -> Unit,
+    topOverlayPadding: Dp = 120.dp
 ) {
     val context = LocalContext.current
     val brands = listOf("Tất cả", "Apple", "Baseus", "Belkin", "Xiaomi")
@@ -1829,65 +2727,60 @@ fun ChargerDatabaseTab(
         else ChargerCatalogRepository.chargers.filter { it.brand == selectedBrand }
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
     ) {
-        // Ghi chú minh bạch về giới hạn phần cứng USB-C
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF172554))
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "ℹ️ Lưu ý kỹ thuật về Thư viện Củ sạc & Mã IC",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Giao thức USB-C PD không truyền tên thương mại hay mã IC bên trong củ sạc sang điện thoại Android không Root. Danh mục dưới đây là thư viện tra cứu kỹ thuật từ tài liệu hãng & báo cáo mổ xẻ (Teardown) của ChargerLAB để bạn chọn thủ công mẫu củ sạc đang test và đối chiếu thông số PDO/PPS.",
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 11.sp
-                )
+        item {
+            LiquidGlassCard(
+                tintColor = Color(0xFF172554),
+                specularAccent = Color(0xFF38BDF8)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "ℹ️ Lưu ý kỹ thuật về Thư viện Củ sạc & Mã IC",
+                        color = Color(0xFF7DD3FC),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Giao thức USB-C PD không truyền tên thương mại hay mã IC bên trong củ sạc sang điện thoại. Danh mục dưới đây là thư viện tra cứu kỹ thuật từ tài liệu hãng & báo cáo mổ xẻ (Teardown) của ChargerLAB để bạn chọn thủ công mẫu củ sạc đang test và đối chiếu thông số PDO/PPS.",
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 11.sp
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            brands.forEach { brand ->
-                FilterChip(
-                    selected = selectedBrand == brand,
-                    onClick = { onBrandChange(brand) },
-                    label = { Text(brand, fontWeight = FontWeight.SemiBold) }
-                )
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                brands.forEach { brand ->
+                    LiquidGlassPillButton(
+                        text = brand,
+                        isSelected = selectedBrand == brand,
+                        accentColor = Color(0xFF38BDF8),
+                        onClick = { onBrandChange(brand) }
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            items(filteredChargers) { item ->
-                val isSelected = item.modelCode == referenceCharger.modelCode
-                ChargerDetailSpecCard(
-                    charger = item,
-                    isSelected = isSelected,
-                    onClick = { onSelectCharger(item) },
-                    onOpenSource = { openExternalUrl(context, item.sourceUrl) }
-                )
-            }
+        items(filteredChargers) { item ->
+            val isSelected = item.modelCode == referenceCharger.modelCode
+            ChargerDetailSpecCard(
+                charger = item,
+                isSelected = isSelected,
+                onClick = { onSelectCharger(item) },
+                onOpenSource = { openExternalUrl(context, item.sourceUrl) }
+            )
         }
     }
 }
@@ -1899,14 +2792,10 @@ fun ChargerDetailSpecCard(
     onClick: () -> Unit,
     onOpenSource: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) Color(0xFF1E3A2F) else Color(0xFF1E293B)
-        )
+    LiquidGlassCard(
+        tintColor = if (isSelected) Color(0xFF064E3B) else Color(0xFF1E293B),
+        specularAccent = if (isSelected) Color(0xFF00E676) else Color(charger.accentColorHex),
+        onClick = onClick
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -1946,13 +2835,13 @@ fun ChargerDetailSpecCard(
                     )
                     Text(
                         text = "Mã Model: ${charger.modelCode}",
-                        color = Color(0xFF38BDF8),
+                        color = Color(0xFF7DD3FC),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Mức độ kiểm chứng: ${charger.verificationStatus}",
-                        color = Color(0xFFFBBF24),
+                        text = "Kiểm chứng: ${charger.verificationStatus}",
+                        color = Color(0xFFFDE68A),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -1960,7 +2849,7 @@ fun ChargerDetailSpecCard(
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            Divider(color = Color.White.copy(alpha = 0.08f))
+            Divider(color = Color.White.copy(alpha = 0.12f))
             Spacer(modifier = Modifier.height(8.dp))
 
             SpecRowItem("Cấu hình cổng & Kích thước:", "${charger.portsConfig} (${charger.dimensionsWeight})")
@@ -1972,7 +2861,6 @@ fun ChargerDetailSpecCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Nút bấm mở trực tiếp bài Teardown / Tài liệu kỹ thuật gốc
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1980,7 +2868,7 @@ fun ChargerDetailSpecCard(
             ) {
                 Text(
                     text = "🔗 Nguồn: ${charger.sourceTitle}",
-                    color = Color(0xFF38BDF8),
+                    color = Color(0xFF7DD3FC),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -1989,13 +2877,13 @@ fun ChargerDetailSpecCard(
                         .weight(1f)
                         .clickable { onOpenSource() }
                 )
-                TextButton(
-                    onClick = onOpenSource,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Text("Mở nguồn ↗", fontSize = 11.sp)
-                }
+                Spacer(modifier = Modifier.width(8.dp))
+                LiquidGlassPillButton(
+                    text = "Mở nguồn ↗",
+                    isSelected = false,
+                    accentColor = Color(0xFF38BDF8),
+                    onClick = onOpenSource
+                )
             }
         }
     }
@@ -2010,13 +2898,13 @@ fun SpecRowItem(label: String, value: String) {
     ) {
         Text(
             text = label,
-            color = Color(0xFF94A3B8),
+            color = Color(0xFFBAE6FD),
             fontSize = 11.sp,
             modifier = Modifier.width(165.dp)
         )
         Text(
             text = value,
-            color = Color(0xFFF1F5F9),
+            color = Color.White,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
@@ -2032,8 +2920,9 @@ fun CommercialChargerImage(
     val context = LocalContext.current
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White),
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .border(1.5.dp, Color(charger.accentColorHex).copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
         contentAlignment = Alignment.Center
     ) {
         SubcomposeAsyncImage(
@@ -2089,7 +2978,7 @@ fun CommercialChargerImage(
 }
 
 // ============================================================================
-// TAB 3: NHẬT KÝ SẠC STREAMING CSV + CHIA SẺ FILE + XÓA SẠCH FILE VẬT LÝ
+// TAB 3: NHẬT KÝ SẠC STREAMING CSV + CHIA SẺ FILE (LIQUID GLASS)
 // ============================================================================
 
 @Composable
@@ -2102,230 +2991,229 @@ fun ChargingLogHistoryTab(
     savedSessions: List<ChargingSessionRecord>,
     onManualStartOrStop: () -> Unit,
     onShareCsv: (String) -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: () -> Unit,
+    topOverlayPadding: Dp = 120.dp
 ) {
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Ghi Streaming trực tiếp ra đĩa (Foreground Service)",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Mỗi mẫu đo được ghi nối tiếp ngay lập tức vào file .csv trên bộ nhớ, không lo mất dữ liệu khi tắt màn hình hoặc tràn RAM",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
+        item {
+            LiquidGlassCard(specularAccent = Color(0xFF00E676)) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ghi Streaming trực tiếp ra đĩa (Foreground Service)",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Mỗi mẫu đo (kèm Chế độ Phổ thông / Shizuku / Root) được ghi nối tiếp ngay vào file .csv trên bộ nhớ",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 11.sp
+                            )
+                        }
+                        Switch(
+                            checked = autoRecordCharging,
+                            onCheckedChange = onAutoRecordChange
                         )
                     }
-                    Switch(
-                        checked = autoRecordCharging,
-                        onCheckedChange = onAutoRecordChange
-                    )
-                }
 
-                if (statusBanner.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "📁 $statusBanner",
-                        color = Color(0xFF00E676),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                    if (statusBanner.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "📁 $statusBanner",
+                            color = Color(0xFF00E676),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (isRecordingSession) "Trạng thái: Đang ghi trực tiếp vào CSV..." else "Trạng thái: Đang chờ cắm sạc",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Button(
-                        onClick = onManualStartOrStop,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
+                            text = if (isRecordingSession) "Trạng thái: Đang ghi trực tiếp vào CSV..." else "Trạng thái: Đang chờ cắm sạc",
+                            color = Color(0xFF7DD3FC),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        LiquidGlassPillButton(
                             text = if (isRecordingSession) "Đóng & Lưu phiên ngay" else "Bắt đầu ghi thủ công",
-                            fontSize = 11.sp
+                            isSelected = true,
+                            accentColor = if (isRecordingSession) Color(0xFFF59E0B) else Color(0xFF00E676),
+                            onClick = onManualStartOrStop
                         )
                     }
                 }
             }
         }
 
-        // Bảng 120 mẫu gần nhất hiển thị trên UI
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.95f),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "Bộ đệm hiển thị (Tối đa 120 mẫu gần nhất — Toàn bộ mẫu đã nằm trong CSV)",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0F172A))
-                        .padding(vertical = 6.dp, horizontal = 8.dp)
-                ) {
-                    Text("Giờ", color = Color(0xFF94A3B8), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
-                    Text("V_bat", color = Color(0xFF94A3B8), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                    Text("I_bat", color = Color(0xFF94A3B8), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                    Text("P_bat", color = Color(0xFF94A3B8), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                    Text("Nhiệt/Pin", color = Color(0xFF94A3B8), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
-                }
-
-                if (recentSamples.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "Cắm sạc hoặc bấm 'Bắt đầu ghi thủ công' để ghi mẫu...",
-                            color = Color(0xFF64748B),
-                            fontSize = 12.sp
-                        )
+        // Bảng mẫu đo gần nhất
+        item {
+            LiquidGlassCard(specularAccent = Color(0xFF38BDF8)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Dòng dữ liệu trực tiếp (${recentSamples.size}/120 mẫu hiển thị — Toàn bộ mẫu đã nằm trong CSV)",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF090D1A).copy(alpha = 0.65f))
+                            .padding(vertical = 6.dp, horizontal = 8.dp)
+                    ) {
+                        Text("Giờ", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
+                        Text("V_bat", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        Text("I_bat", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        Text("P_bat", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        Text("Nhiệt/Pin", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
                     }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(recentSamples.asReversed()) { s ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp, horizontal = 8.dp)
-                            ) {
-                                Text(s.timeFormatted, color = Color(0xFFCBD5E1), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
-                                Text(String.format("%.2fV", s.batVoltageV), color = Color(0xFFAB47BC), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                Text(String.format("%.2fA", s.batCurrentA), color = Color(0xFF29B6F6), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                Text(String.format("%.1fW", s.batPowerW), color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                Text("${String.format("%.1f°", s.tempC)}/${s.levelPct}%", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
+
+                    if (recentSamples.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Cắm sạc hoặc bấm 'Bắt đầu ghi thủ công' để ghi mẫu...",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            recentSamples.asReversed().take(15).forEach { s ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp, horizontal = 8.dp)
+                                ) {
+                                    Text(s.timeFormatted, color = Color(0xFFE2E8F0), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
+                                    Text(String.format("%.2fV", s.batVoltageV), color = Color(0xFFC084FC), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.2fA", s.batCurrentA), color = Color(0xFF38BDF8), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fW", s.batPowerW), color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text("${String.format("%.1f°", s.tempC)}/${s.levelPct}%", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
+                                }
+                                Divider(color = Color.White.copy(alpha = 0.06f))
                             }
-                            Divider(color = Color.White.copy(alpha = 0.04f))
                         }
                     }
                 }
             }
         }
 
-        // Danh sách các phiên sạc đã lưu kèm nút Chia sẻ / Mở file CSV & Xóa sạch file vật lý
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1.05f),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Các phiên sạc đã lưu (${savedSessions.size})",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (savedSessions.isNotEmpty()) {
-                        Text(
-                            text = "🗑️ Xóa sạch lịch sử & File CSV",
-                            color = Color(0xFFEF4444),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable { onClearHistory() }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-
-                if (savedSessions.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "Chưa có phiên sạc nào được lưu.",
-                            color = Color(0xFF64748B),
-                            fontSize = 12.sp
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+        // Danh sách các phiên sạc đã lưu
+        item {
+            LiquidGlassCard(specularAccent = Color(0xFF8B5CF6)) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(savedSessions) { ses ->
-                            Surface(
-                                color = Color(0xFF0F172A),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = "${ses.startTime} ➔ ${ses.endTime}",
-                                            color = Color.White,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "Pin: ${ses.startLevel}% ➔ ${ses.endLevel}%",
-                                            color = Color(0xFF00E676),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Text(
-                                        text = "P_bat đỉnh: ${String.format("%.1fW", ses.peakBatPowerW)} • P_bat TB: ${String.format("%.1fW", ses.avgBatPowerW)} • Nhiệt max: ${String.format("%.1f°C", ses.maxTempC)} • ${ses.samplesCount} mẫu",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 11.sp
-                                    )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "File: ${File(ses.csvFilePath).name}",
-                                            color = Color(0xFF94A3B8),
-                                            fontSize = 10.sp,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        TextButton(
-                                            onClick = { onShareCsv(ses.csvFilePath) },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp)
+                        Text(
+                            text = "Các phiên sạc đã lưu (${savedSessions.size})",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (savedSessions.isNotEmpty()) {
+                            Text(
+                                text = "🗑️ Xóa sạch lịch sử & File CSV",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { onClearHistory() }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (savedSessions.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Chưa có phiên sạc nào được lưu.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            savedSessions.forEach { ses ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF090D1A).copy(alpha = 0.62f))
+                                        .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("📤 Chia sẻ / Mở CSV", fontSize = 11.sp, color = Color(0xFF00E676))
+                                            Text(
+                                                text = "[${ses.privilegeModeUsed}] ${ses.startTime} ➔ ${ses.endTime}",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Pin: ${ses.startLevel}% ➔ ${ses.endLevel}%",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Text(
+                                            text = "P_bat đỉnh: ${String.format("%.1fW", ses.peakBatPowerW)} • P_bat TB: ${String.format("%.1fW", ses.avgBatPowerW)} • Nhiệt max: ${String.format("%.1f°C", ses.maxTempC)} • ${ses.samplesCount} mẫu",
+                                            color = Color(0xFF7DD3FC),
+                                            fontSize = 11.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "File: ${File(ses.csvFilePath).name}",
+                                                color = Color(0xFFCBD5E1),
+                                                fontSize = 10.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            LiquidGlassPillButton(
+                                                text = "📤 Chia sẻ / Mở CSV",
+                                                isSelected = true,
+                                                accentColor = Color(0xFF00E676),
+                                                onClick = { onShareCsv(ses.csvFilePath) }
+                                            )
                                         }
                                     }
                                 }
@@ -2339,7 +3227,7 @@ fun ChargingLogHistoryTab(
 }
 
 // ============================================================================
-// CÁC COMPONENT DÙNG CHUNG (METRIC CARDS & BIỂU ĐỒ)
+// CÁC COMPONENT DÙNG CHUNG (LIQUID GLASS METRIC CARDS & BIỂU ĐỒ)
 // ============================================================================
 
 @Composable
@@ -2350,21 +3238,21 @@ fun MetricCard(
     subValue: String,
     accentColor: Color
 ) {
-    Card(
+    LiquidGlassCard(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+        cornerRadius = 18.dp,
+        specularAccent = accentColor
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(text = title, color = Color(0xFF94A3B8), fontSize = 12.sp)
+            Text(text = title, color = Color(0xFFBAE6FD), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = mainValue,
                 color = accentColor,
                 fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.ExtraBold
             )
-            Text(text = subValue, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+            Text(text = subValue, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
         }
     }
 }
@@ -2375,10 +3263,10 @@ fun SmallMetricCard(
     label: String,
     value: String
 ) {
-    Card(
+    LiquidGlassCard(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+        cornerRadius = 14.dp,
+        specularAccent = Color(0xFF7DD3FC)
     ) {
         Column(
             modifier = Modifier
@@ -2386,9 +3274,9 @@ fun SmallMetricCard(
                 .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = label, color = Color(0xFF94A3B8), fontSize = 11.sp)
+            Text(text = label, color = Color(0xFFBAE6FD), fontSize = 11.sp)
             Spacer(modifier = Modifier.height(3.dp))
-            Text(text = value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(text = value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -2427,20 +3315,26 @@ fun PowerChart(
         drawPath(
             path = fillPath,
             brush = Brush.verticalGradient(
-                colors = listOf(Color(0xFF00E676).copy(alpha = 0.35f), Color.Transparent)
+                colors = listOf(
+                    Color(0xFF00E676).copy(alpha = 0.42f),
+                    Color(0xFF38BDF8).copy(alpha = 0.15f),
+                    Color.Transparent
+                )
             )
         )
 
         drawPath(
             path = strokePath,
-            color = Color(0xFF00E676),
+            brush = Brush.horizontalGradient(
+                colors = listOf(Color(0xFF38BDF8), Color(0xFF00E676))
+            ),
             style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
         )
 
         for (i in 1..3) {
             val y = size.height * i / 4f
             drawLine(
-                color = Color.White.copy(alpha = 0.08f),
+                color = Color.White.copy(alpha = 0.12f),
                 start = Offset(0f, y),
                 end = Offset(size.width, y),
                 strokeWidth = 1.dp.toPx()

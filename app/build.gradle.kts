@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.batterypowermonitor"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "3.0"
+        versionCode = 6
+        versionName = "3.2"
     }
 
     buildTypes {
@@ -45,4 +45,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }

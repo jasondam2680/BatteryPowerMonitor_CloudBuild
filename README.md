@@ -1,14 +1,7 @@
-# Battery Power Monitor v3.0 (Kiến trúc chuẩn kỹ thuật)
+# Battery Power Monitor v3.2 (Liquid Glass UI & Tablet Parallel Split-Window)
 
-1. **Tách bạch bản chất vật lý của công suất**:
-   - Hiển thị rõ **Công suất ước tính phía Cell Pin (`P_bat = V_bat * I_bat * Số_Cell_Nối_Tiếp`)**, hỗ trợ chuyển đổi cấu hình Pin đơn `1S (~4.4V)` và Pin kép nối tiếp `2S (~8.8V)`.
-   - Quét đa đường dẫn `/sys/class/power_supply/*` để tìm `VBUS` và `IBUS`. Nếu SELinux trên máy không Root chặn quyền đọc, ứng dụng báo cáo minh bạch từng đường dẫn bị chặn và giải thích rõ sự khác biệt giữa công suất sau mạch Charge Pump và công suất đầu vào VBUS.
-2. **Loại bỏ hoàn toàn lỗi suy luận vòng tròn (Circular Reasoning)**:
-   - Không tự động chọn củ sạc theo công suất rồi dùng ngược lại củ sạc đó để kết luận chuẩn sạc (tránh việc tự gán nhãn PD 3.2 cho củ Belkin WCA013 khi chưa đọc được thương lượng PD từ Kernel).
-   - Phân tách rõ nhãn **[✓ XÁC THỰC TỪ KERNEL]** và **[⚠️ SUY LUẬN TỪ P_BAT (SELINUX CHẶN SYSFS)]**.
-3. **Thư viện Củ sạc đối chiếu thủ công có dẫn nguồn Teardown / Official FAQ**:
-   - Ghi rõ trạng thái kiểm chứng từng mẫu (*Đã kiểm chứng Teardown ChargerLAB* vs *Thông số công bố của hãng*), kèm nút mở trực tiếp link bài mổ xẻ phần cứng.
-4. **Foreground Service + Streaming CSV + Sống qua xoay màn hình + FileProvider**:
-   - Chạy `ChargingMonitorService` hiển thị công suất trên thanh thông báo, giữ phiên ghi sống ngay cả khi tắt màn hình hoặc thoát ra nền.
-   - Ghi nối tiếp (Append) từng mẫu trực tiếp xuống file `.csv` trên đĩa, giới hạn bộ đệm hiển thị ở 120 mẫu gần nhất.
-   - Xóa lịch sử sẽ xóa sạch cả các file `.csv` vật lý trên đĩa; hỗ trợ nút **Chia sẻ / Mở CSV** qua `FileProvider`.
+1. **Phong cách thiết kế Liquid Glass (Kính lông mờ đa lớp & Phản chiếu ánh sáng)**:
+   - Nền động `LiquidGlassAmbientBackground` với 3 luồng ánh sáng chuyển động mượt mà phía dưới các tấm kính mờ.
+   - Khu vực Menu `LiquidGlassTopMenuOverlay` nằm ở lớp trên cùng (`zIndex = 10f`), phản chiếu ánh sáng động (Specular Shimmer & Caustic Highlight) qua lớp kính lông mờ xuống các thành phần đồ họa bên dưới khi cuộn.
+2. **Giao diện Máy tính bảng / Xoay ngang (Parallel Split-Window)**:
+   - Tự động kích hoạt bố cục 2 cửa sổ song song khi xoay ngang hoặc trên màn hình rộng (`screenWidthDp >= 600`), cho phép chọn độc lập nội dung của **Cửa sổ Trái** và **Cửa sổ Phải** ngay trên thanh Menu Liquid Glass.
