@@ -1121,7 +1121,7 @@ object ChargerCatalogRepository {
             pdoProfiles = "5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/2,25A (45W)",
             ppsOrAvsRange = "PPS: 3,3–11V/4,05A và 3,3–21V/2,14A",
             dimensionsWeight = "33,4 × 44,8 × 89,5 mm • 101g (EU; UK 33,4 × 44,8 × 86,4 mm / 113g, US 33,4 × 44,8 × 68,5 mm / 95g, IN 33,4 × 44,8 × 79,6 mm / 121g — theo trang chính thức Nothing)",
-            accentColorHex = 0xFFF5F5F5,
+            accentColorHex = 0xFF334155,
             productImageUrl = "https://cdn.shopify.com/s/files/1/0586/3270/0077/files/0000s_0002_power-45w-in.png",
             verificationStatus = "Thông số công bố của Nothing (trang chính thức; 2022 — NGOÀI khung 3 năm, giữ vì là củ Nothing duy nhất; chưa có teardown; mã model chưa xác minh; ảnh do anh Jason cung cấp)",
             sourceTitle = "Nothing Official: Power 45W",
@@ -1730,7 +1730,7 @@ class ChargingMonitorService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("Battery Power Monitor (Skeuomorphism + Aqua v3.3)")
+            .setContentTitle("Battery Power Monitor v3.4 (Light Theme, bố cục V2)")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -1750,367 +1750,55 @@ class ChargingMonitorService : Service() {
 }
 
 // ============================================================================
-// 7. HỆ THỐNG DESIGN ENGINE "SKEUOMORPHISM + AQUA" (KIM LOẠI CHẢI XƯỚC, NÚT GEL, Ô LCD LÕM)
+// 7. HỆ THỐNG DESIGN ENGINE CHỦ ĐỀ SÁNG (v3.4, thay Skeuomorphism + Aqua tối)
+// Bố cục trở về V2 (Scaffold + TabRow) + chủ đề sáng: nền xám nhạt, card trắng,
+// chữ tối. Giữ tên hàm AquaSkeuoCard / AquaSegmentButton để không phải đổi
+// ~30 nơi gọi, chỉ đổi ruột thành card sáng.
 // ============================================================================
 
 /**
- * Nền graphite chải xước tĩnh + thanh công cụ Aqua sáng, thay cho nền orb chuyển động cũ
- */
-@Composable
-fun AquaBrushedBackground(
-    isCharging: Boolean,
-    modifier: Modifier = Modifier
-) {
-    // Nền "graphite chải xước" tĩnh kiểu Skeuomorphism: không còn orb chuyển động
-    // kiểu kính mờ cũ, vừa tiết kiệm pin vừa giống mặt panel của một thiết bị đo thật.
-    // Lớp chrome Aqua sáng chỉ nằm ở thanh công cụ phía trên, còn vùng nội dung là
-    // panel graphite tối để toàn bộ chữ sáng sẵn có trong app vẫn đọc được.
-    val glowColor = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1B2436), Color(0xFF0D1220), Color(0xFF080C16))
-                )
-            )
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            // Vân chải xước ngang: xen kẽ sợi sáng / sợi tối, mỗi sợi cách nhau 4px.
-            var y = 0f
-            var light = true
-            while (y < size.height) {
-                drawLine(
-                    color = if (light) Color.White.copy(alpha = 0.025f) else Color.Black.copy(alpha = 0.05f),
-                    start = Offset(0f, y),
-                    end = Offset(size.width, y),
-                    strokeWidth = 1f
-                )
-                y += 4f
-                light = !light
-            }
-            // Ánh sáng trạng thái tĩnh ở mép trên, không nhấp nháy, không animation.
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(glowColor.copy(alpha = 0.10f), Color.Transparent),
-                    startY = 0f,
-                    endY = size.height * 0.22f
-                )
-            )
-        }
-    }
-}
-
-/**
- * Tấm panel Skeuomorphism + Aqua: kim loại graphite có viền bevel (sáng trên, tối dưới),
- * bóng đổ thật và một dải gloss Aqua ở mép trên — thay cho lớp kính lông mờ cũ.
- * Giữ nguyên chữ ký hàm cũ (tintColor / glassAlpha / specularAccent) để mọi nơi gọi
- * AquaSkeuoCard trước đây không phải sửa lại tham số; glassAlpha nay hiểu là độ gloss.
+ * Card chủ đề sáng: nền trắng, viền xám nhạt, bóng mờ nhẹ, dải accent 3px ở
+ * mép trên (màu specularAccent; mặc định trắng nên không thấy). Các tham số
+ * tintColor / glassAlpha cũ được giữ để tương thích chữ ký, nhưng không còn
+ * dùng để tô nền tối nữa.
  */
 @Composable
 fun AquaSkeuoCard(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 14.dp,
-    tintColor: Color = Color(0xFF1E293B),
+    tintColor: Color = Color.White,
     glassAlpha: Float = 0.52f,
     specularAccent: Color = Color.White,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
-    val gloss = (glassAlpha * 0.45f).coerceIn(0.10f, 0.35f)
     val baseMod = modifier
         .shadow(
-            elevation = 8.dp,
+            elevation = 2.dp,
             shape = shape,
-            ambientColor = Color.Black.copy(alpha = 0.45f),
-            spotColor = Color.Black.copy(alpha = 0.55f)
+            ambientColor = Color.Black.copy(alpha = 0.08f),
+            spotColor = Color.Black.copy(alpha = 0.10f)
         )
         .clip(shape)
-        .background(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = gloss),
-                    tintColor,
-                    tintColor,
-                    Color.Black.copy(alpha = 0.28f)
-                )
-            )
-        )
-        // Bevel: viền ngoài tối + viền sáng trong mô phỏng mép kim loại được vát.
-        .border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.65f)), shape = shape)
-        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), shape = shape)
+        .background(Color.White)
+        .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), shape = shape)
         .let { m -> if (onClick != null) m.clickable { onClick() } else m }
 
     Box(modifier = baseMod) {
-        // Dải gloss Aqua ở mép trên: sáng nhất ở đỉnh rồi mờ dần xuống, như nút gel macOS X.
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(20.dp)
-                .align(Alignment.TopCenter)
-        ) {
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.28f),
-                        Color.White.copy(alpha = 0.06f),
-                        Color.Transparent
-                    )
-                ),
-                cornerRadius = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx())
-            )
-            // Đường viền sáng 1px ngay mép trên của panel.
-            drawLine(
-                color = specularAccent.copy(alpha = 0.45f),
-                start = Offset(8f, 1f),
-                end = Offset(size.width - 8f, 1f),
-                strokeWidth = 1f,
-                cap = StrokeCap.Round
+        if (specularAccent != Color.White) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .align(Alignment.TopCenter)
+                    .background(specularAccent.copy(alpha = 0.9f))
             )
         }
         Column(
             modifier = Modifier.fillMaxWidth(),
             content = content
         )
-    }
-}
-
-/**
- * Thanh công cụ Aqua kiểu macOS X: chrome sáng, segmented control gel, đèn LED trạng thái.
- * Dấu ấn Bé chọn: thanh chrome sáng + panel nội dung graphite tối (như một máy đo để bàn:
- * vỏ chrome, mặt máy tối), thay vì toàn bộ app sáng hay toàn bộ app kính mờ.
- */
-@Composable
-fun AquaTopBar(
-    selectedTab: Int,
-    onSelectTab: (Int) -> Unit,
-    isTabletLandscape: Boolean,
-    splitLeftPane: Int,
-    splitRightPane: Int,
-    onSplitLeftChange: (Int) -> Unit,
-    onSplitRightChange: (Int) -> Unit,
-    privilegeMode: AppPrivilegeMode,
-    isRecording: Boolean,
-    samplesCount: Int,
-    savedSessionsCount: Int,
-    isCharging: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val glowColor = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
-    val menuShape = RoundedCornerShape(14.dp)
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .shadow(
-                elevation = 6.dp,
-                shape = menuShape,
-                ambientColor = Color.Black.copy(alpha = 0.35f),
-                spotColor = Color.Black.copy(alpha = 0.45f)
-            )
-            .clip(menuShape)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFFF8FAFC),
-                        Color(0xFFDCE6F2),
-                        Color(0xFFB9C9DE)
-                    )
-                )
-            )
-            .border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.35f)), shape = menuShape)
-            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)), shape = menuShape)
-    ) {
-        // Dải gloss Aqua trên cùng của thanh công cụ.
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(22.dp)
-                .align(Alignment.TopCenter)
-        ) {
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.65f),
-                        Color.White.copy(alpha = 0.10f),
-                        Color.Transparent
-                    )
-                ),
-                cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.55f),
-                                        glowColor,
-                                        glowColor.copy(alpha = 0.75f)
-                                    )
-                                )
-                            )
-                            .border(1.dp, Color.Black.copy(alpha = 0.30f), RoundedCornerShape(9.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "⚡", fontSize = 17.sp)
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = if (isTabletLandscape) {
-                                "Battery Power Monitor • Skeuomorphism + Aqua"
-                            } else {
-                                "Battery Power Monitor • Skeuomorphism + Aqua"
-                            },
-                            color = Color(0xFF0F172A),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = if (isTabletLandscape) {
-                                "Chrome Aqua • Panel graphite • Nút gel • Ô LCD lõm"
-                            } else {
-                                "3 Chế độ: Phổ thông • ADB (Shizuku) • Root Toàn Quyền"
-                            },
-                            color = Color(0xFF475569),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                // Đèn LED trạng thái kiểu thiết bị thật: xanh lá khi đang REC, xanh dương khi chờ.
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.70f))
-                        .border(
-                            1.dp,
-                            Color.Black.copy(alpha = 0.25f),
-                            RoundedCornerShape(50)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(9.dp)
-                                .shadow(4.dp, CircleShape, ambientColor = if (isRecording) Color(0xFF00C853) else Color(0xFF38BDF8))
-                                .clip(CircleShape)
-                                .background(if (isRecording) Color(0xFF00C853) else Color(0xFF38BDF8))
-                                .border(1.dp, Color.Black.copy(alpha = 0.25f), CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isRecording) "REC CSV ($samplesCount)" else privilegeMode.shortTitle,
-                            color = Color(0xFF0F172A),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Điều hướng kiểu Aqua segmented control (Bé chọn thay cho pill kính mờ):
-            // - Điện thoại dọc: 1 segmented control chọn 1 trong 3 Tab.
-            // - Tablet xoay ngang: 2 segmented control độc lập cho Cửa sổ Trái / Phải.
-            val paneTitles = listOf(
-                0 to "⚡ Đo & Chế Độ",
-                1 to "🔌 Tra Cứu Củ Sạc",
-                2 to "📈 Nhật Ký CSV ($savedSessionsCount)"
-            )
-
-            if (!isTabletLandscape) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    paneTitles.forEach { (idx, title) ->
-                        val active = selectedTab == idx
-                        AquaSegmentButton(
-                            text = title,
-                            isSelected = active,
-                            accentColor = glowColor,
-                            onClick = { onSelectTab(idx) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "Cửa sổ Trái:",
-                            color = Color(0xFF475569),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        paneTitles.forEach { (idx, title) ->
-                            AquaSegmentButton(
-                                text = title,
-                                isSelected = splitLeftPane == idx,
-                                accentColor = Color(0xFF00C853),
-                                onClick = { onSplitLeftChange(idx) }
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "Cửa sổ Phải:",
-                            color = Color(0xFF475569),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        paneTitles.forEach { (idx, title) ->
-                            AquaSegmentButton(
-                                text = title,
-                                isSelected = splitRightPane == idx,
-                                accentColor = Color(0xFF38BDF8),
-                                onClick = { onSplitRightChange(idx) }
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -2178,10 +1866,6 @@ fun AquaSegmentButton(
     }
 }
 
-// ============================================================================
-// 8. MAIN ACTIVITY & BỐ CỤC ĐÁP ỨNG (PORTRAIT vs TABLET PARALLEL WINDOWS)
-// ============================================================================
-
 fun shareOrOpenCsvFile(context: Context, csvPath: String) {
     try {
         val file = File(csvPath)
@@ -2216,11 +1900,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Color(0xFF00E676),
-                    secondary = Color(0xFF38BDF8),
-                    background = Color(0xFF050814),
-                    surface = Color(0xFF1E293B)
+                colorScheme = lightColorScheme(
+                    primary = Color(0xFF0284C7),
+                    secondary = Color(0xFF16A34A),
+                    background = Color(0xFFF1F5F9),
+                    surface = Color.White,
+                    onBackground = Color(0xFF0F172A),
+                    onSurface = Color(0xFF0F172A)
                 )
             ) {
                 Surface(
@@ -2247,12 +1933,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun BatteryPowerMonitorApp() {
+    // BỐ CỤC V2 (khôi phục từ commit v2.0 72486bd): Scaffold + header trên cùng
+    // chứa tiêu đề, pill REC/STANDBY và TabRow; nội dung chỉ 1 cột duy nhất,
+    // KHÔNG còn cửa sổ song song tablet/landscape, KHÔNG còn thanh overlay nổi.
+    // Chức năng giữ nguyên v3.3.1 (3 chế độ quyền, catalog 29 mẫu, CSV streaming).
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-
-    // Nhận diện chế độ Máy tính bảng hoặc màn hình xoay ngang (Parallel Split-Window Mode)
-    val isTabletOrLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
-            configuration.screenWidthDp >= 600
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -2281,141 +1966,141 @@ fun BatteryPowerMonitorApp() {
     val statusBanner by TelemetryRepository.statusBanner.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    var splitLeftPane by remember { mutableIntStateOf(0) }  // Mặc định Cửa sổ Trái: Đo & Chế độ
-    var splitRightPane by remember { mutableIntStateOf(1) } // Mặc định Cửa sổ Phải: Tra cứu Củ sạc / Nhật ký CSV
     var selectedBrandFilter by remember { mutableStateOf("Tất cả") }
 
     val protocolResult = remember(telemetry) {
         ChargerCatalogRepository.analyzeChargingProtocol(telemetry)
     }
 
-    val topOverlayClearance = if (isTabletOrLandscape) 118.dp else 122.dp
-
-    @Composable
-    fun RenderPaneByIndex(paneIndex: Int, topPadding: Dp) {
-        when (paneIndex) {
-            0 -> RealtimeDashboardTab(
-                privilegeMode = privilegeMode,
-                onPrivilegeModeChange = { TelemetryRepository.setPrivilegeMode(context, it) },
-                telemetry = telemetry,
-                protocolResult = protocolResult,
-                referenceCharger = referenceCharger,
-                cellSeriesCount = cellSeriesCount,
-                onCellSeriesChange = { TelemetryRepository.setCellSeriesCount(it) },
-                powerHistory = powerHistory,
-                refreshIntervalMs = refreshIntervalMs,
-                onIntervalChange = { TelemetryRepository.setRefreshInterval(it) },
-                onOpenChargerCatalog = {
-                    if (isTabletOrLandscape) splitRightPane = 1 else selectedTab = 1
-                },
-                topOverlayPadding = topPadding
-            )
-            1 -> ChargerDatabaseTab(
-                selectedBrand = selectedBrandFilter,
-                onBrandChange = { selectedBrandFilter = it },
-                referenceCharger = referenceCharger,
-                onSelectCharger = { TelemetryRepository.setReferenceCharger(it) },
-                topOverlayPadding = topPadding
-            )
-            else -> ChargingLogHistoryTab(
-                autoRecordCharging = autoRecordEnabled,
-                onAutoRecordChange = { TelemetryRepository.setAutoRecord(it) },
-                isRecordingSession = isRecording,
-                recentSamples = recentSamples,
-                statusBanner = statusBanner,
-                savedSessions = savedSessions,
-                onManualStartOrStop = {
-                    if (isRecording) {
-                        TelemetryRepository.stopAndFinalizeSession(context, telemetry.levelPercent)
-                    } else {
-                        TelemetryRepository.startStreamingSession(
-                            context,
-                            telemetry,
-                            protocolResult.primaryStandard
+    Scaffold(
+        topBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Battery Power & Charger Analyzer",
+                            color = Color(0xFF0F172A),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "Đo công suất • Nhận diện củ sạc & chuẩn PD/PPS/QC • Tự động lưu Log",
+                            color = Color(0xFF64748B),
+                            fontSize = 11.sp
                         )
                     }
-                },
-                onShareCsv = { path -> shareOrOpenCsvFile(context, path) },
-                onClearHistory = { TelemetryRepository.deleteAllSessionsAndCsvFiles(context) },
-                topOverlayPadding = topPadding
-            )
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // LỚP 0 (DƯỚI CÙNG): Nền graphite chải xước tĩnh kiểu Skeuomorphism
-        AquaBrushedBackground(isCharging = telemetry.isCharging)
-
-        // LỚP 1 (GIỮA): Nội dung ứng dụng (1 cửa sổ ở Portrait hoặc 2 cửa sổ song song ở Tablet Landscape)
-        if (!isTabletOrLandscape) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                RenderPaneByIndex(paneIndex = selectedTab, topPadding = topOverlayClearance)
-            }
-        } else {
-            // BỐ CỤC CỬA SỔ SONG SONG DÀNH CHO MÁY TÍNH BẢNG / MÀN HÌNH XOAY NGANG
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Cửa sổ Song Song Bên Trái
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    RenderPaneByIndex(paneIndex = splitLeftPane, topPadding = topOverlayClearance)
-                }
-
-                // Rãnh kim loại (groove) phân tách 2 cửa sổ song song
-                Box(
-                    modifier = Modifier
-                        .width(1.5.dp)
-                        .fillMaxHeight()
-                        .padding(top = topOverlayClearance, bottom = 16.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.65f),
-                                    Color.White.copy(alpha = 0.18f),
-                                    Color.Black.copy(alpha = 0.65f),
-                                    Color.Transparent
-                                )
+                    // Chỉ báo trạng thái tự động ghi log
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (isRecording) Color(0xFFDCFCE7) else Color(0xFFF1F5F9)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isRecording) Color(0xFF16A34A) else Color(0xFF94A3B8))
                             )
-                        )
-                )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isRecording) "REC (${recentSamples.size})" else "STANDBY",
+                                color = if (isRecording) Color(0xFF15803D) else Color(0xFF64748B),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
 
-                // Cửa sổ Song Song Bên Phải
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Thanh chuyển Tab (kiểu V2, nay trên nền sáng)
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color(0xFFF1F5F9),
+                    contentColor = Color(0xFF0284C7),
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
                 ) {
-                    RenderPaneByIndex(paneIndex = splitRightPane, topPadding = topOverlayClearance)
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("⚡ Đo & Chuẩn Sạc", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("🔌 Củ Sạc (9 Hãng)", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("📈 Nhật Ký Sạc (${recentSamples.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    )
                 }
             }
-        }
-
-        // LỚP 2 (TRÊN CÙNG - Z-INDEX CAO NHẤT): Thanh công cụ Aqua
-        AquaTopBar(
-            selectedTab = selectedTab,
-            onSelectTab = { selectedTab = it },
-            isTabletLandscape = isTabletOrLandscape,
-            splitLeftPane = splitLeftPane,
-            splitRightPane = splitRightPane,
-            onSplitLeftChange = { splitLeftPane = it },
-            onSplitRightChange = { splitRightPane = it },
-            privilegeMode = privilegeMode,
-            isRecording = isRecording,
-            samplesCount = recentSamples.size,
-            savedSessionsCount = savedSessions.size,
-            isCharging = telemetry.isCharging,
+        },
+        containerColor = Color(0xFFF1F5F9)
+    ) { innerPadding ->
+        Box(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .zIndex(10f)
-        )
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            when (selectedTab) {
+                0 -> RealtimeDashboardTab(
+                    privilegeMode = privilegeMode,
+                    onPrivilegeModeChange = { TelemetryRepository.setPrivilegeMode(context, it) },
+                    telemetry = telemetry,
+                    protocolResult = protocolResult,
+                    referenceCharger = referenceCharger,
+                    cellSeriesCount = cellSeriesCount,
+                    onCellSeriesChange = { TelemetryRepository.setCellSeriesCount(it) },
+                    powerHistory = powerHistory,
+                    refreshIntervalMs = refreshIntervalMs,
+                    onIntervalChange = { TelemetryRepository.setRefreshInterval(it) },
+                    onOpenChargerCatalog = { selectedTab = 1 }
+                )
+                1 -> ChargerDatabaseTab(
+                    selectedBrand = selectedBrandFilter,
+                    onBrandChange = { selectedBrandFilter = it },
+                    referenceCharger = referenceCharger,
+                    onSelectCharger = { TelemetryRepository.setReferenceCharger(it) }
+                )
+                else -> ChargingLogHistoryTab(
+                    autoRecordCharging = autoRecordEnabled,
+                    onAutoRecordChange = { TelemetryRepository.setAutoRecord(it) },
+                    isRecordingSession = isRecording,
+                    recentSamples = recentSamples,
+                    statusBanner = statusBanner,
+                    savedSessions = savedSessions,
+                    onManualStartOrStop = {
+                        if (isRecording) {
+                            TelemetryRepository.stopAndFinalizeSession(context, telemetry.levelPercent)
+                        } else {
+                            TelemetryRepository.startStreamingSession(
+                                context,
+                                telemetry,
+                                protocolResult.primaryStandard
+                            )
+                        }
+                    },
+                    onShareCsv = { path -> shareOrOpenCsvFile(context, path) },
+                    onClearHistory = { TelemetryRepository.deleteAllSessionsAndCsvFiles(context) }
+                )
+            }
+        }
     }
 }
 
@@ -2436,7 +2121,6 @@ fun RealtimeDashboardTab(
     refreshIntervalMs: Long,
     onIntervalChange: (Long) -> Unit,
     onOpenChargerCatalog: () -> Unit,
-    topOverlayPadding: Dp = 120.dp
 ) {
     val context = LocalContext.current
 
@@ -2445,7 +2129,7 @@ fun RealtimeDashboardTab(
             .fillMaxSize()
             .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
+        contentPadding = PaddingValues(vertical = 12.dp)
     ) {
         // 1. Thẻ Chọn 3 Chế Độ Hoạt Động (Panel Skeuo)
         item {
@@ -2455,7 +2139,7 @@ fun RealtimeDashboardTab(
                 Column(modifier = Modifier.padding(15.dp)) {
                     Text(
                         text = "CHỌN CHẾ ĐỘ QUYỀN TRUY CẬP HỆ THỐNG (3 CHẾ ĐỘ)",
-                        color = Color(0xFF7DD3FC),
+                        color = Color(0xFF0284C7),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -2482,27 +2166,27 @@ fun RealtimeDashboardTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF090D1A).copy(alpha = 0.58f))
-                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
+                            .background(Color(0xFFF1F5F9).copy(alpha = 0.58f))
+                            .border(1.dp, Color(0xFF0F172A).copy(alpha = 0.14f), RoundedCornerShape(14.dp))
                             .padding(12.dp)
                     ) {
                         Column {
                             Text(
                                 text = privilegeMode.fullTitle,
-                                color = Color.White,
+                                color = Color(0xFF0F172A),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = privilegeMode.description,
-                                color = Color(0xFFE2E8F0),
+                                color = Color(0xFF334155),
                                 fontSize = 11.sp
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "Trạng thái: ${telemetry.sysfsReport.privilegeStatusText}",
-                                color = if (telemetry.sysfsReport.isPrivilegeGranted) Color(0xFF00E676) else Color(0xFFFBBF24),
+                                color = if (telemetry.sysfsReport.isPrivilegeGranted) Color(0xFF16A34A) else Color(0xFFD97706),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -2511,7 +2195,7 @@ fun RealtimeDashboardTab(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "🛠️ ${telemetry.sysfsReport.extraDeveloperMetrics}",
-                                    color = Color(0xFF7DD3FC),
+                                    color = Color(0xFF0284C7),
                                     fontSize = 11.sp
                                 )
                             }
@@ -2528,7 +2212,7 @@ fun RealtimeDashboardTab(
                                     AquaSegmentButton(
                                         text = "Tải Shizuku ↗",
                                         isSelected = false,
-                                        accentColor = Color(0xFF38BDF8),
+                                        accentColor = Color(0xFF0284C7),
                                         onClick = { openExternalUrl(context, "https://shizuku.rikka.app/download/") }
                                     )
                                 }
@@ -2541,7 +2225,7 @@ fun RealtimeDashboardTab(
 
         // 2. Thẻ Công suất chính — Panel Skeuo
         item {
-            val statusColor = if (telemetry.isCharging) Color(0xFF00E676) else Color(0xFFFFB74D)
+            val statusColor = if (telemetry.isCharging) Color(0xFF16A34A) else Color(0xFFEA580C)
             AquaSkeuoCard(
                 cornerRadius = 26.dp,
                 specularAccent = statusColor,
@@ -2564,20 +2248,20 @@ fun RealtimeDashboardTab(
                     val animatedBatPower by animateFloatAsState(targetValue = telemetry.effectiveBatPowerW, label = "bat_power")
                     Text(
                         text = String.format("%.2f W", animatedBatPower),
-                        color = Color.White,
+                        color = Color(0xFF0F172A),
                         fontSize = 46.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.10f))
-                            .border(1.dp, Color(0xFFFBBF24).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0F172A).copy(alpha = 0.10f))
+                            .border(1.dp, Color(0xFFD97706).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "CÔNG SUẤT ƯỚC TÍNH TỪ PHÍA CELL PIN (P_bat = V_bat × I_bat × ${cellSeriesCount}S)",
-                            color = Color(0xFFFDE68A),
+                            color = Color(0xFFB45309),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -2589,8 +2273,8 @@ fun RealtimeDashboardTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF090D1A).copy(alpha = 0.58f))
-                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                            .background(Color(0xFFF1F5F9).copy(alpha = 0.58f))
+                            .border(1.dp, Color(0xFF0F172A).copy(alpha = 0.14f), RoundedCornerShape(12.dp))
                             .padding(10.dp)
                     ) {
                         Column {
@@ -2598,7 +2282,7 @@ fun RealtimeDashboardTab(
                                 Text(
                                     text = "✓ Công suất cổng sạc VBUS (${privilegeMode.shortTitle}): ${String.format("%.2f W", telemetry.vbusInputPowerW)} " +
                                             "(${String.format("%.2fV", telemetry.sysfsReport.vbusVoltageV)} × ${String.format("%.2fA", telemetry.sysfsReport.ibusCurrentA)})",
-                                    color = Color(0xFF00E676),
+                                    color = Color(0xFF16A34A),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -2613,7 +2297,7 @@ fun RealtimeDashboardTab(
                                 }
                                 Text(
                                     text = reasonText,
-                                    color = Color(0xFFE2E8F0),
+                                    color = Color(0xFF334155),
                                     fontSize = 11.sp
                                 )
                             }
@@ -2629,7 +2313,7 @@ fun RealtimeDashboardTab(
                     ) {
                         Text(
                             text = "Cấu trúc cell pin của máy:",
-                            color = Color(0xFFBAE6FD),
+                            color = Color(0xFF475569),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -2637,13 +2321,13 @@ fun RealtimeDashboardTab(
                             AquaSegmentButton(
                                 text = "1S (Pin đơn ~4.4V)",
                                 isSelected = cellSeriesCount == 1,
-                                accentColor = Color(0xFF38BDF8),
+                                accentColor = Color(0xFF0284C7),
                                 onClick = { onCellSeriesChange(1) }
                             )
                             AquaSegmentButton(
                                 text = "2S (Pin kép ×2)",
                                 isSelected = cellSeriesCount == 2,
-                                accentColor = Color(0xFF00E676),
+                                accentColor = Color(0xFF16A34A),
                                 onClick = { onCellSeriesChange(2) }
                             )
                         }
@@ -2654,7 +2338,7 @@ fun RealtimeDashboardTab(
 
         // 3. Thẻ Nhận diện Chuẩn Sạc (Panel Skeuo)
         item {
-            val accent = if (protocolResult.isVerifiedFromKernel) Color(0xFF00E676) else Color(0xFFF59E0B)
+            val accent = if (protocolResult.isVerifiedFromKernel) Color(0xFF16A34A) else Color(0xFFD97706)
             AquaSkeuoCard(
                 tintColor = if (protocolResult.isVerifiedFromKernel) Color(0xFF064E3B) else Color(0xFF1E293B),
                 specularAccent = accent
@@ -2667,7 +2351,7 @@ fun RealtimeDashboardTab(
                     ) {
                         Text(
                             text = "CHẨN ĐOÁN CƠ CHẾ SẠC",
-                            color = Color(0xFF7DD3FC),
+                            color = Color(0xFF0284C7),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
@@ -2680,7 +2364,7 @@ fun RealtimeDashboardTab(
                         ) {
                             Text(
                                 text = protocolResult.verificationBadge,
-                                color = Color.White,
+                                color = Color(0xFF0F172A),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -2689,21 +2373,21 @@ fun RealtimeDashboardTab(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = protocolResult.primaryStandard,
-                        color = Color.White,
+                        color = Color(0xFF0F172A),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = protocolResult.powerBasisNote,
-                        color = Color(0xFF7DD3FC),
+                        color = Color(0xFF0284C7),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = protocolResult.technicalExplanation,
-                        color = Color(0xFFE2E8F0),
+                        color = Color(0xFF334155),
                         fontSize = 11.sp
                     )
                 }
@@ -2721,25 +2405,25 @@ fun RealtimeDashboardTab(
                     title = "Dòng nạp tại Pin (I_bat)",
                     mainValue = String.format("%.3f A", telemetry.batCurrentAmp),
                     subValue = String.format("%.0f mA (Sau mạch sạc)", telemetry.batCurrentMa),
-                    accentColor = Color(0xFF38BDF8)
+                    accentColor = Color(0xFF0284C7)
                 )
                 MetricCard(
                     modifier = Modifier.weight(1f),
                     title = "Điện áp Cell Pin (V_bat)",
                     mainValue = String.format("%.3f V", telemetry.batVoltageVolt * cellSeriesCount),
                     subValue = "1 Cell: ${String.format("%.0f mV", telemetry.batVoltageVolt * 1000)} (${cellSeriesCount}S)",
-                    accentColor = Color(0xFFC084FC)
+                    accentColor = Color(0xFF9333EA)
                 )
             }
         }
 
         // 5. Bảng kiểm tra trực tiếp trạng thái đọc Node theo Chế độ
         item {
-            AquaSkeuoCard(specularAccent = Color(0xFF38BDF8)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF0284C7)) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
                         text = "THÔNG SỐ TRUY XUẤT THEO CHẾ ĐỘ: ${privilegeMode.shortTitle.uppercase()}",
-                        color = Color(0xFFBAE6FD),
+                        color = Color(0xFF475569),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -2791,20 +2475,20 @@ fun RealtimeDashboardTab(
                         ) {
                             Text(
                                 text = "CỦ SẠC ĐỐI CHIẾU THAM KHẢO (CHỌN TAY)",
-                                color = Color(0xFFFDE68A),
+                                color = Color(0xFFB45309),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
                                 text = "Đổi mẫu ➔",
-                                color = Color(0xFF7DD3FC),
+                                color = Color(0xFF0284C7),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
                         Text(
                             text = referenceCharger.productName,
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -2812,12 +2496,12 @@ fun RealtimeDashboardTab(
                         )
                         Text(
                             text = "Model: ${referenceCharger.modelCode} • Công bố: ${referenceCharger.maxPowerW}W Max",
-                            color = Color(0xFFE2E8F0),
+                            color = Color(0xFF334155),
                             fontSize = 11.sp
                         )
                         Text(
                             text = "PDO/PPS của củ: ${referenceCharger.pdoProfiles}",
-                            color = Color(0xFFCBD5E1),
+                            color = Color(0xFF475569),
                             fontSize = 11.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -2854,7 +2538,7 @@ fun RealtimeDashboardTab(
         // 8. Biểu đồ công suất thời gian thực
         item {
             AquaSkeuoCard(
-                specularAccent = Color(0xFF00E676),
+                specularAccent = Color(0xFF16A34A),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(190.dp)
@@ -2870,13 +2554,13 @@ fun RealtimeDashboardTab(
                     ) {
                         Text(
                             text = "Đồ thị biến thiên Công suất (60 mẫu gần nhất)",
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "Chu kỳ: ${refreshIntervalMs}ms",
-                            color = Color(0xFFBAE6FD),
+                            color = Color(0xFF475569),
                             fontSize = 11.sp
                         )
                     }
@@ -2896,12 +2580,12 @@ fun RealtimeDashboardTab(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Chu kỳ lấy mẫu:", color = Color(0xFFBAE6FD), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Chu kỳ lấy mẫu:", color = Color(0xFF475569), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 listOf(500L to "0.5s", 1000L to "1.0s", 2000L to "2.0s").forEach { (ms, label) ->
                     AquaSegmentButton(
                         text = label,
                         isSelected = refreshIntervalMs == ms,
-                        accentColor = Color(0xFF00E676),
+                        accentColor = Color(0xFF16A34A),
                         onClick = { onIntervalChange(ms) }
                     )
                 }
@@ -2917,10 +2601,10 @@ fun SysfsStatusRow(label: String, value: String, path: String, isOk: Boolean) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = label, color = Color(0xFFE2E8F0), fontSize = 11.sp)
+            Text(text = label, color = Color(0xFF334155), fontSize = 11.sp)
             Text(
                 text = value,
-                color = if (isOk) Color(0xFF00E676) else Color(0xFFFCA5A5),
+                color = if (isOk) Color(0xFF16A34A) else Color(0xFFDC2626),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -2944,7 +2628,6 @@ fun ChargerDatabaseTab(
     onBrandChange: (String) -> Unit,
     referenceCharger: ChargerSpecProfile,
     onSelectCharger: (ChargerSpecProfile) -> Unit,
-    topOverlayPadding: Dp = 120.dp
 ) {
     val context = LocalContext.current
     val brands = listOf("Tất cả", "Apple", "Baseus", "Belkin", "Xiaomi", "Anker", "Samsung", "Cuktech", "Ugreen", "Nothing")
@@ -2958,23 +2641,23 @@ fun ChargerDatabaseTab(
             .fillMaxSize()
             .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
+        contentPadding = PaddingValues(vertical = 12.dp)
     ) {
         item {
             AquaSkeuoCard(
                 tintColor = Color(0xFF172554),
-                specularAccent = Color(0xFF38BDF8)
+                specularAccent = Color(0xFF0284C7)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
                         text = "ℹ️ Lưu ý kỹ thuật về Thư viện Củ sạc & Mã IC",
-                        color = Color(0xFF7DD3FC),
+                        color = Color(0xFF0284C7),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "Giao thức USB-C PD không truyền tên thương mại hay mã IC bên trong củ sạc sang điện thoại. Danh mục dưới đây là thư viện tra cứu kỹ thuật từ tài liệu hãng & báo cáo mổ xẻ (Teardown) của ChargerLAB để bạn chọn thủ công mẫu củ sạc đang test và đối chiếu thông số PDO/PPS.",
-                        color = Color(0xFFE2E8F0),
+                        color = Color(0xFF334155),
                         fontSize = 11.sp
                     )
                 }
@@ -2992,7 +2675,7 @@ fun ChargerDatabaseTab(
                     AquaSegmentButton(
                         text = brand,
                         isSelected = selectedBrand == brand,
-                        accentColor = Color(0xFF38BDF8),
+                        accentColor = Color(0xFF0284C7),
                         onClick = { onBrandChange(brand) }
                     )
                 }
@@ -3020,7 +2703,7 @@ fun ChargerDetailSpecCard(
 ) {
     AquaSkeuoCard(
         tintColor = if (isSelected) Color(0xFF064E3B) else Color(0xFF1E293B),
-        specularAccent = if (isSelected) Color(0xFF00E676) else Color(charger.accentColorHex),
+        specularAccent = if (isSelected) Color(0xFF16A34A) else Color(charger.accentColorHex),
         onClick = onClick
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -3047,7 +2730,7 @@ fun ChargerDetailSpecCard(
                         if (isSelected) {
                             Text(
                                 text = "✓ ĐANG ĐỐI CHIẾU",
-                                color = Color(0xFF00E676),
+                                color = Color(0xFF16A34A),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
@@ -3055,19 +2738,19 @@ fun ChargerDetailSpecCard(
                     }
                     Text(
                         text = charger.productName,
-                        color = Color.White,
+                        color = Color(0xFF0F172A),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "Mã Model: ${charger.modelCode}",
-                        color = Color(0xFF7DD3FC),
+                        color = Color(0xFF0284C7),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = "Kiểm chứng: ${charger.verificationStatus}",
-                        color = Color(0xFFFDE68A),
+                        color = Color(0xFFB45309),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -3075,7 +2758,7 @@ fun ChargerDetailSpecCard(
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            Divider(color = Color.White.copy(alpha = 0.12f))
+            Divider(color = Color(0xFF0F172A).copy(alpha = 0.12f))
             Spacer(modifier = Modifier.height(8.dp))
 
             SpecRowItem("Cấu hình cổng & Kích thước:", "${charger.portsConfig} (${charger.dimensionsWeight})")
@@ -3094,7 +2777,7 @@ fun ChargerDetailSpecCard(
             ) {
                 Text(
                     text = "🔗 Nguồn: ${charger.sourceTitle}",
-                    color = Color(0xFF7DD3FC),
+                    color = Color(0xFF0284C7),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -3107,7 +2790,7 @@ fun ChargerDetailSpecCard(
                 AquaSegmentButton(
                     text = "Mở nguồn ↗",
                     isSelected = false,
-                    accentColor = Color(0xFF38BDF8),
+                    accentColor = Color(0xFF0284C7),
                     onClick = onOpenSource
                 )
             }
@@ -3124,13 +2807,13 @@ fun SpecRowItem(label: String, value: String) {
     ) {
         Text(
             text = label,
-            color = Color(0xFFBAE6FD),
+            color = Color(0xFF475569),
             fontSize = 11.sp,
             modifier = Modifier.width(165.dp)
         )
         Text(
             text = value,
-            color = Color.White,
+            color = Color(0xFF0F172A),
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
@@ -3218,17 +2901,16 @@ fun ChargingLogHistoryTab(
     onManualStartOrStop: () -> Unit,
     onShareCsv: (String) -> Unit,
     onClearHistory: () -> Unit,
-    topOverlayPadding: Dp = 120.dp
 ) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
+        contentPadding = PaddingValues(vertical = 12.dp)
     ) {
         item {
-            AquaSkeuoCard(specularAccent = Color(0xFF00E676)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF16A34A)) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -3238,13 +2920,13 @@ fun ChargingLogHistoryTab(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Ghi Streaming trực tiếp ra đĩa (Foreground Service)",
-                                color = Color.White,
+                                color = Color(0xFF0F172A),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = "Mỗi mẫu đo (kèm Chế độ Phổ thông / Shizuku / Root) được ghi nối tiếp ngay vào file .csv trên bộ nhớ",
-                                color = Color(0xFFCBD5E1),
+                                color = Color(0xFF475569),
                                 fontSize = 11.sp
                             )
                         }
@@ -3258,7 +2940,7 @@ fun ChargingLogHistoryTab(
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "📁 $statusBanner",
-                            color = Color(0xFF00E676),
+                            color = Color(0xFF16A34A),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -3273,14 +2955,14 @@ fun ChargingLogHistoryTab(
                     ) {
                         Text(
                             text = if (isRecordingSession) "Trạng thái: Đang ghi trực tiếp vào CSV..." else "Trạng thái: Đang chờ cắm sạc",
-                            color = Color(0xFF7DD3FC),
+                            color = Color(0xFF0284C7),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                         AquaSegmentButton(
                             text = if (isRecordingSession) "Đóng & Lưu phiên ngay" else "Bắt đầu ghi thủ công",
                             isSelected = true,
-                            accentColor = if (isRecordingSession) Color(0xFFF59E0B) else Color(0xFF00E676),
+                            accentColor = if (isRecordingSession) Color(0xFFD97706) else Color(0xFF16A34A),
                             onClick = onManualStartOrStop
                         )
                     }
@@ -3290,11 +2972,11 @@ fun ChargingLogHistoryTab(
 
         // Bảng mẫu đo gần nhất
         item {
-            AquaSkeuoCard(specularAccent = Color(0xFF38BDF8)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF0284C7)) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
                         text = "Dòng dữ liệu trực tiếp (${recentSamples.size}/120 mẫu hiển thị — Toàn bộ mẫu đã nằm trong CSV)",
-                        color = Color.White,
+                        color = Color(0xFF0F172A),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -3303,14 +2985,14 @@ fun ChargingLogHistoryTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF090D1A).copy(alpha = 0.65f))
+                            .background(Color(0xFFF1F5F9).copy(alpha = 0.65f))
                             .padding(vertical = 6.dp, horizontal = 8.dp)
                     ) {
-                        Text("Giờ", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
-                        Text("V_bat", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                        Text("I_bat", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                        Text("P_bat", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                        Text("Nhiệt/Pin", color = Color(0xFFBAE6FD), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
+                        Text("Giờ", color = Color(0xFF475569), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
+                        Text("V_bat", color = Color(0xFF475569), fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        Text("I_bat", color = Color(0xFF475569), fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        Text("P_bat", color = Color(0xFF475569), fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        Text("Nhiệt/Pin", color = Color(0xFF475569), fontSize = 11.sp, modifier = Modifier.weight(1.2f))
                     }
 
                     if (recentSamples.isEmpty()) {
@@ -3334,13 +3016,13 @@ fun ChargingLogHistoryTab(
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp, horizontal = 8.dp)
                                 ) {
-                                    Text(s.timeFormatted, color = Color(0xFFE2E8F0), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
-                                    Text(String.format("%.2fV", s.batVoltageV), color = Color(0xFFC084FC), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                    Text(String.format("%.2fA", s.batCurrentA), color = Color(0xFF38BDF8), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                    Text(String.format("%.1fW", s.batPowerW), color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                    Text("${String.format("%.1f°", s.tempC)}/${s.levelPct}%", color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
+                                    Text(s.timeFormatted, color = Color(0xFF334155), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
+                                    Text(String.format("%.2fV", s.batVoltageV), color = Color(0xFF9333EA), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.2fA", s.batCurrentA), color = Color(0xFF0284C7), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fW", s.batPowerW), color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text("${String.format("%.1f°", s.tempC)}/${s.levelPct}%", color = Color(0xFF0F172A), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1.2f))
                                 }
-                                Divider(color = Color.White.copy(alpha = 0.06f))
+                                Divider(color = Color(0xFF0F172A).copy(alpha = 0.06f))
                             }
                         }
                     }
@@ -3359,14 +3041,14 @@ fun ChargingLogHistoryTab(
                     ) {
                         Text(
                             text = "Các phiên sạc đã lưu (${savedSessions.size})",
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                         if (savedSessions.isNotEmpty()) {
                             Text(
                                 text = "🗑️ Xóa sạch lịch sử & File CSV",
-                                color = Color(0xFFFCA5A5),
+                                color = Color(0xFFDC2626),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.clickable { onClearHistory() }
@@ -3395,8 +3077,8 @@ fun ChargingLogHistoryTab(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(Color(0xFF090D1A).copy(alpha = 0.62f))
-                                        .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFF1F5F9).copy(alpha = 0.62f))
+                                        .border(1.dp, Color(0xFF0F172A).copy(alpha = 0.14f), RoundedCornerShape(12.dp))
                                         .padding(10.dp)
                                 ) {
                                     Column {
@@ -3406,20 +3088,20 @@ fun ChargingLogHistoryTab(
                                         ) {
                                             Text(
                                                 text = "[${ses.privilegeModeUsed}] ${ses.startTime} ➔ ${ses.endTime}",
-                                                color = Color.White,
+                                                color = Color(0xFF0F172A),
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
                                                 text = "Pin: ${ses.startLevel}% ➔ ${ses.endLevel}%",
-                                                color = Color(0xFF00E676),
+                                                color = Color(0xFF16A34A),
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
                                         Text(
                                             text = "P_bat đỉnh: ${String.format("%.1fW", ses.peakBatPowerW)} • P_bat TB: ${String.format("%.1fW", ses.avgBatPowerW)} • Nhiệt max: ${String.format("%.1f°C", ses.maxTempC)} • ${ses.samplesCount} mẫu",
-                                            color = Color(0xFF7DD3FC),
+                                            color = Color(0xFF0284C7),
                                             fontSize = 11.sp
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
@@ -3430,14 +3112,14 @@ fun ChargingLogHistoryTab(
                                         ) {
                                             Text(
                                                 text = "File: ${File(ses.csvFilePath).name}",
-                                                color = Color(0xFFCBD5E1),
+                                                color = Color(0xFF475569),
                                                 fontSize = 10.sp,
                                                 modifier = Modifier.weight(1f)
                                             )
                                             AquaSegmentButton(
                                                 text = "📤 Chia sẻ / Mở CSV",
                                                 isSelected = true,
-                                                accentColor = Color(0xFF00E676),
+                                                accentColor = Color(0xFF16A34A),
                                                 onClick = { onShareCsv(ses.csvFilePath) }
                                             )
                                         }
@@ -3470,7 +3152,7 @@ fun MetricCard(
         specularAccent = accentColor
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(text = title, color = Color(0xFFBAE6FD), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = title, color = Color(0xFF475569), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = mainValue,
@@ -3478,7 +3160,7 @@ fun MetricCard(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.ExtraBold
             )
-            Text(text = subValue, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
+            Text(text = subValue, color = Color(0xFF0F172A).copy(alpha = 0.8f), fontSize = 11.sp)
         }
     }
 }
@@ -3492,7 +3174,7 @@ fun SmallMetricCard(
     AquaSkeuoCard(
         modifier = modifier,
         cornerRadius = 14.dp,
-        specularAccent = Color(0xFF7DD3FC)
+        specularAccent = Color(0xFF0284C7)
     ) {
         Column(
             modifier = Modifier
@@ -3500,9 +3182,9 @@ fun SmallMetricCard(
                 .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = label, color = Color(0xFFBAE6FD), fontSize = 11.sp)
+            Text(text = label, color = Color(0xFF475569), fontSize = 11.sp)
             Spacer(modifier = Modifier.height(3.dp))
-            Text(text = value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+            Text(text = value, color = Color(0xFF0F172A), fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -3542,8 +3224,8 @@ fun PowerChart(
             path = fillPath,
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0xFF00E676).copy(alpha = 0.42f),
-                    Color(0xFF38BDF8).copy(alpha = 0.15f),
+                    Color(0xFF16A34A).copy(alpha = 0.42f),
+                    Color(0xFF0284C7).copy(alpha = 0.15f),
                     Color.Transparent
                 )
             )
@@ -3552,7 +3234,7 @@ fun PowerChart(
         drawPath(
             path = strokePath,
             brush = Brush.horizontalGradient(
-                colors = listOf(Color(0xFF38BDF8), Color(0xFF00E676))
+                colors = listOf(Color(0xFF0284C7), Color(0xFF16A34A))
             ),
             style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
         )
@@ -3560,7 +3242,7 @@ fun PowerChart(
         for (i in 1..3) {
             val y = size.height * i / 4f
             drawLine(
-                color = Color.White.copy(alpha = 0.12f),
+                color = Color(0xFF0F172A).copy(alpha = 0.12f),
                 start = Offset(0f, y),
                 end = Offset(size.width, y),
                 strokeWidth = 1.dp.toPx()

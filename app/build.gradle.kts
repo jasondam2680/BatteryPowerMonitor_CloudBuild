@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.batterypowermonitor"
         minSdk = 24
         targetSdk = 34
-        versionCode = 8
-        versionName = "3.3.1"
+        versionCode = 9
+        versionName = "3.4"
     }
 
     buildTypes {
