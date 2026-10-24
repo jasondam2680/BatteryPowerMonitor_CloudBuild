@@ -873,7 +873,7 @@ object ChargerCatalogRepository {
         ),
         // =====================================================================
         // v3.3 — BỔ SUNG 2023–2026: Anker / Samsung / Cuktech / Ugreen /
-        // CMF by Nothing + ngoại lệ Baseus GaN2 Lite CGAN65US.
+        // Nothing + ngoại lệ Baseus GaN2 Lite CCGAN65US.
         // Quy tắc ghi chú (đừng sửa lén): IC nào chưa có teardown thì ghi
         // "Chưa công bố teardown", PPS nào chưa có dải APDO thì ghi
         // "Chưa xác minh", kích thước nào khác nhau theo vùng thì ghi rõ
@@ -1109,25 +1109,6 @@ object ChargerCatalogRepository {
             sourceUrl = "https://us.ugreen.com/products/nexode-air-usb-c-charger-65w-gan-foldable-plug"
         ),
         ChargerSpecProfile(
-            brand = "CMF by Nothing",
-            productName = "CMF Power 65W GaN (thương hiệu con của Nothing)",
-            modelCode = "Chưa xác minh (mã model) — trang hỗ trợ CMF không ghi mã; các shop ghi mâu thuẫn C332 / A10800007",
-            maxPowerW = 65,
-            portsConfig = "2x USB-C + 1x USB-A (C1+C2 = 45W+20W; C1+A = 45W+18W; C1+C2+A = 45W+15W)",
-            primaryControllerIc = "Chưa công bố teardown",
-            protocolChipIc = "Chưa công bố teardown",
-            ganPowerFet = "GaN",
-            supportedProtocols = listOf("USB PD 3.0", "QC 4.0+/3.0/2.0", "SCP", "FCP", "PPS", "AFC", "Apple 2.4A", "Samsung 9V2A", "DCP"),
-            pdoProfiles = "C1/C2: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/3,25A (65W) • A: 5V/3A, 9V/3A, 12V/3A (36W)",
-            ppsOrAvsRange = "PPS: 3,3–11V/5A (16,5–55W) / 5–20V/3,25A (16,25–65W) (một số shop ghi dải đầu là 5,0–11V thay vì 3,3–11V, chưa xác minh từ chính thức)",
-            dimensionsWeight = "56,5 × 55 × 30 mm • 146,1g (bản US; bản UK 65,8 × 55 × 30 mm / 162g)",
-            accentColorHex = 0xFFFF6A00,
-            productImageUrl = "https://intl.cmf.tech/cdn/shop/files/charge-more_1200x.jpg?v=1695725636",
-            verificationStatus = "Thông số từ trang hỗ trợ chính thức CMF + bảng hãng (2023, công bố 26/09/2023; chưa có teardown; ảnh là ảnh trang support CMF, không phải ảnh cắt nền sản phẩm)",
-            sourceTitle = "CMF Official Support: Power 65W GaN + bảng thông số (Taham Tech) + Business Standard 26/09/2023",
-            sourceUrl = "https://support.cmf.tech/hc/en-us/categories/18392717738769-Power-65W-GaN"
-        ),
-        ChargerSpecProfile(
             brand = "Nothing",
             productName = "Nothing Power (45W) — củ sạc chính hãng duy nhất của Nothing",
             modelCode = "Chưa xác minh (mã model) — các shop ghi mâu thuẫn SH-103 / C347 / C304",
@@ -1141,15 +1122,15 @@ object ChargerCatalogRepository {
             ppsOrAvsRange = "PPS: 3,3–11V/4,05A và 3,3–21V/2,14A",
             dimensionsWeight = "33,4 × 44,8 × 89,5 mm • 101g (EU; UK 33,4 × 44,8 × 86,4 mm / 113g, US 33,4 × 44,8 × 68,5 mm / 95g, IN 33,4 × 44,8 × 79,6 mm / 121g — theo trang chính thức Nothing)",
             accentColorHex = 0xFFF5F5F5,
-            productImageUrl = "https://cdn.sanity.io/images/gtd4w1cq/production/18cb777e86ee552bc94eaec7d52c1edadeeda80a-4096x2305.jpg?auto=format",
-            verificationStatus = "Thông số công bố của Nothing (trang chính thức; 2022 — NGOÀI khung 3 năm, giữ vì là củ Nothing duy nhất; chưa có teardown; mã model chưa xác minh)",
+            productImageUrl = "https://cdn.shopify.com/s/files/1/0586/3270/0077/files/0000s_0002_power-45w-in.png",
+            verificationStatus = "Thông số công bố của Nothing (trang chính thức; 2022 — NGOÀI khung 3 năm, giữ vì là củ Nothing duy nhất; chưa có teardown; mã model chưa xác minh; ảnh do anh Jason cung cấp)",
             sourceTitle = "Nothing Official: Power 45W",
             sourceUrl = "https://checkout.nothing.tech/products/power-45w"
         ),
         ChargerSpecProfile(
             brand = "Baseus",
             productName = "Baseus GaN2 Lite Quick Charger C+U 65W (ngoại lệ theo yêu cầu)",
-            modelCode = "CGAN65US (theo yêu cầu — CHƯA XÁC MINH công khai; alias đã xác minh: CCGAN2L-B02 trắng EU / CCGAN2L-B01 đen EU)",
+            modelCode = "CCGAN65US",
             maxPowerW = 65,
             portsConfig = "1x USB-C + 1x USB-A (KHÔNG phải single-port; C riêng 65W, A riêng 45W, đồng thời 45W+18W = 63W)",
             primaryControllerIc = "Chưa công bố teardown",
@@ -1161,7 +1142,7 @@ object ChargerCatalogRepository {
             dimensionsWeight = "100 × 35 × 30 mm • 115g (Digitec B02; B01 ghi 35 × 30 × 99 mm / 110g — cùng thân máy, chênh do cách đo)",
             accentColorHex = 0xFF00E5FF,
             productImageUrl = "https://www.shop.baltrade.eu/img/product/medium/baseus-gan2-lite-ccgan2l-b01-65w-szybka-ladowarka-sieciowa-z-gniazdem-usb-c-pd-3-0-oraz-usb-qc4-0-8.jpg",
-            verificationStatus = "Một phần xác minh — mã CGAN65US và trang chính thức riêng chưa xác minh; thông số theo dòng CCGAN2L-B01/B02; 2022 (ngoài khung 3 năm, ngoại lệ theo yêu cầu); chưa có teardown; 'Lite' không có định nghĩa chính thức (chỉ ghi nhỏ/nhẹ hơn ~30% theo Baltrade)",
+            verificationStatus = "Mã CCGAN65US do anh Jason đính chính (trước đó ghi nhầm CGAN65US); thông số theo dòng GaN2 Lite C+U 65W; 2022 (ngoài khung 3 năm, ngoại lệ theo yêu cầu); chưa có teardown; 'Lite' không có định nghĩa chính thức (chỉ ghi nhỏ/nhẹ hơn ~30% theo Baltrade)",
             sourceTitle = "Baseus GaN2 Lite C+U 65W — Digitec + Baltrade (CCGAN2L-B01/B02)",
             sourceUrl = "https://www.digitec.ch/en/s1/product/baseus-gan2-lite-quick-chargercu-65w-eu-white-65-w-1-portion-usb-chargers-21090035"
         )
@@ -2966,7 +2947,7 @@ fun ChargerDatabaseTab(
     topOverlayPadding: Dp = 120.dp
 ) {
     val context = LocalContext.current
-    val brands = listOf("Tất cả", "Apple", "Baseus", "Belkin", "Xiaomi", "Anker", "Samsung", "Cuktech", "Ugreen", "CMF by Nothing", "Nothing")
+    val brands = listOf("Tất cả", "Apple", "Baseus", "Belkin", "Xiaomi", "Anker", "Samsung", "Cuktech", "Ugreen", "Nothing")
     val filteredChargers = remember(selectedBrand) {
         if (selectedBrand == "Tất cả") ChargerCatalogRepository.chargers
         else ChargerCatalogRepository.chargers.filter { it.brand == selectedBrand }
