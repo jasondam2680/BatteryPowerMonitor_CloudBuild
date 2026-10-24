@@ -1119,18 +1119,18 @@ object ChargerCatalogRepository {
             ganPowerFet = "GaN",
             supportedProtocols = listOf("USB PD 3.0", "QC 4.0+/3.0/2.0", "SCP", "FCP", "PPS", "AFC", "Apple 2.4A", "Samsung 9V2A", "DCP"),
             pdoProfiles = "C1/C2: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/3,25A (65W) • A: 5V/3A, 9V/3A, 12V/3A (36W)",
-            ppsOrAvsRange = "PPS: 3,3–11V/5A (16,5–55W) / 5–20V/3,25A (16,25–65W)",
+            ppsOrAvsRange = "PPS: 3,3–11V/5A (16,5–55W) / 5–20V/3,25A (16,25–65W) (một số shop ghi dải đầu là 5,0–11V thay vì 3,3–11V, chưa xác minh từ chính thức)",
             dimensionsWeight = "56,5 × 55 × 30 mm • 146,1g (bản US; bản UK 65,8 × 55 × 30 mm / 162g)",
             accentColorHex = 0xFFFF6A00,
-            productImageUrl = "",
-            verificationStatus = "Thông số từ bảng hãng trích trên trang bán lẻ (2023, công bố 26/09/2023; chưa có teardown; chưa có URL ảnh chính thức xác minh nên app hiển thị fallback hãng + W)",
-            sourceTitle = "CMF Power 65W GaN — bảng thông số (Taham Tech) + Business Standard 26/09/2023",
-            sourceUrl = "https://tahamtech.com.bd/product/cmf-by-nothing-power-65w-gan-fast-charger-dual-usb-c-usb-a/"
+            productImageUrl = "https://intl.cmf.tech/cdn/shop/files/charge-more_1200x.jpg?v=1695725636",
+            verificationStatus = "Thông số từ trang hỗ trợ chính thức CMF + bảng hãng (2023, công bố 26/09/2023; chưa có teardown; ảnh là ảnh trang support CMF, không phải ảnh cắt nền sản phẩm)",
+            sourceTitle = "CMF Official Support: Power 65W GaN + bảng thông số (Taham Tech) + Business Standard 26/09/2023",
+            sourceUrl = "https://support.cmf.tech/hc/en-us/categories/18392717738769-Power-65W-GaN"
         ),
         ChargerSpecProfile(
             brand = "Nothing",
             productName = "Nothing Power (45W) — củ sạc chính hãng duy nhất của Nothing",
-            modelCode = "C347 / C304 (theo trang bán lẻ; chưa xác minh chính thức)",
+            modelCode = "Chưa xác minh (mã model) — các shop ghi mâu thuẫn SH-103 / C347 / C304",
             maxPowerW = 45,
             portsConfig = "1x USB-C (không kèm cáp theo một số listing)",
             primaryControllerIc = "Chưa công bố teardown",
@@ -1139,12 +1139,12 @@ object ChargerCatalogRepository {
             supportedProtocols = listOf("USB PD 3.0", "PPS", "QC 4.0+", "QC 3.0", "QC 2.0"),
             pdoProfiles = "5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/2,25A (45W)",
             ppsOrAvsRange = "PPS: 3,3–11V/4,05A và 3,3–21V/2,14A",
-            dimensionsWeight = "33,4 × 44,8 × 89,5 mm (EU) • 101g (EU; US 96g, UK 113g, IN 121g, IN 33,4 × 44,8 × 79,6 mm — nguồn bán lẻ, chưa thống nhất)",
+            dimensionsWeight = "33,4 × 44,8 × 89,5 mm • 101g (EU; UK 33,4 × 44,8 × 86,4 mm / 113g, US 33,4 × 44,8 × 68,5 mm / 95g, IN 33,4 × 44,8 × 79,6 mm / 121g — theo trang chính thức Nothing)",
             accentColorHex = 0xFFF5F5F5,
-            productImageUrl = "",
-            verificationStatus = "Thông số từ trang bán lẻ (2022 — NGOÀI khung 3 năm, giữ vì là củ Nothing duy nhất; chưa có teardown; chưa có URL ảnh chính thức xác minh nên app hiển thị fallback hãng + W)",
-            sourceTitle = "Nothing 45W Power Adapter — bảng thông số (CMF Bangladesh, bán lẻ)",
-            sourceUrl = "https://cmf.com.bd/product/nothing-45w-power-adapter/"
+            productImageUrl = "https://cdn.sanity.io/images/gtd4w1cq/production/18cb777e86ee552bc94eaec7d52c1edadeeda80a-4096x2305.jpg?auto=format",
+            verificationStatus = "Thông số công bố của Nothing (trang chính thức; 2022 — NGOÀI khung 3 năm, giữ vì là củ Nothing duy nhất; chưa có teardown; mã model chưa xác minh)",
+            sourceTitle = "Nothing Official: Power 45W",
+            sourceUrl = "https://checkout.nothing.tech/products/power-45w"
         ),
         ChargerSpecProfile(
             brand = "Baseus",

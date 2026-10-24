@@ -14,7 +14,7 @@
 3. **Catalog củ sạc: từ 15 lên 30 mẫu**:
    - Mới: Anker (A121D 45W, A2688 100W, A2697 140W), Samsung (EP-T2510 25W, EP-T4511 45W, EP-T6010 60W), Cuktech (15 140W, 10 Ultra 120W, A15C 65W), Ugreen (Nexode Pro 100W, Nexode Pro 160W, Nexode Air 65W), CMF by Nothing Power 65W GaN, Nothing Power 45W, Baseus GaN2 Lite C+U 65W (mã theo yêu cầu: CGAN65US).
    - Quy tắc ghi chú trong code: IC chưa có teardown thì ghi "Chưa công bố teardown", PPS chưa có dải APDO thì ghi "Chưa xác minh", kích thước khác nhau theo vùng thì ghi rõ biến thể đã chọn.
-   - Lưu ý phạm vi, đọc kỹ trước khi dùng số liệu: củ Nothing 45W ra mắt 2022 (ngoài khung 3 năm, giữ vì là củ Nothing duy nhất); CMF 65W là thương hiệu con của Nothing, ra mắt 26/09/2023; năm ra mắt Samsung EP-T4511 chưa xác minh chính thức; Baseus CGAN65US chưa xác minh công khai (alias đã xác minh: CCGAN2L-B01/B02, 2022); ảnh của 2 mẫu Nothing/CMF chưa có URL chính thức xác minh nên app hiển thị fallback hãng + W.
+   - Lưu ý phạm vi, đọc kỹ trước khi dùng số liệu: củ Nothing 45W ra mắt 2022 (ngoài khung 3 năm, giữ vì là củ Nothing duy nhất); CMF 65W là thương hiệu con của Nothing, ra mắt 26/09/2023; năm ra mắt Samsung EP-T4511 chưa xác minh chính thức; Baseus CGAN65US chưa xác minh công khai (alias đã xác minh: CCGAN2L-B01/B02, 2022); ảnh CMF lấy từ trang support chính thức CMF (không phải ảnh cắt nền sản phẩm), ảnh Nothing lấy từ trang chính thức nothing.tech; mã model của cả 2 mẫu này đều chưa xác minh (các shop ghi mâu thuẫn).
    - Bộ lọc hãng trong tab tra cứu đã cập nhật đủ 10 hãng + "Tất cả". Củ tham chiếu mặc định vẫn là Belkin WCA013 (index 8, không đổi vì mẫu mới chèn sau mẫu cũ).
 
 ## Chế độ vận hành (không đổi từ v3.2)
