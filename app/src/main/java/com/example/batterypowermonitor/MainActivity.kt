@@ -870,6 +870,300 @@ object ChargerCatalogRepository {
             verificationStatus = "Thông số công bố của Xiaomi Global",
             sourceTitle = "Xiaomi Official: 120W HyperCharge Combo Specifications",
             sourceUrl = "https://www.mi.com/my/product/xiaomi-120w-hypercharge-combo-type-a/"
+        ),
+        // =====================================================================
+        // v3.3 — BỔ SUNG 2023–2026: Anker / Samsung / Cuktech / Ugreen /
+        // CMF by Nothing + ngoại lệ Baseus GaN2 Lite CGAN65US.
+        // Quy tắc ghi chú (đừng sửa lén): IC nào chưa có teardown thì ghi
+        // "Chưa công bố teardown", PPS nào chưa có dải APDO thì ghi
+        // "Chưa xác minh", kích thước nào khác nhau theo vùng thì ghi rõ
+        // biến thể đã chọn. Ảnh nào chưa có URL chính thức xác minh thì để
+        // productImageUrl = "" để Coil rơi vào fallback hiển thị hãng + W.
+        // =====================================================================
+        ChargerSpecProfile(
+            brand = "Anker",
+            productName = "Anker Nano Charger (45W, Smart Display, 180° Foldable)",
+            modelCode = "A121D",
+            maxPowerW = 45,
+            portsConfig = "1x USB-C",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.0", "PPS 3A (không hỗ trợ PPS 5A)"),
+            pdoProfiles = "5V/3A, 9V/3A, 15V/3A, 20V/2,25A (45W)",
+            ppsOrAvsRange = "PPS đã đo (LTT Labs): 5–16V/3A; tài liệu hãng nói tới 21V nhưng test 02/2026 chỉ đo tối đa 16V",
+            dimensionsWeight = "34 × 35,5 × 40 mm • 75g (bản US chân gập; bản UK 3 chân khác kích thước, đừng trộn)",
+            accentColorHex = 0xFF00A9E0,
+            productImageUrl = "https://cdn.shopify.com/s/files/1/0493/7636/2660/files/2_1f6f102b-a779-46f8-a8b2-9c962ebf784c.png?v=1775547735",
+            verificationStatus = "Thông số công bố của hãng (2025) + đo PPS của LTT Labs (chưa có teardown)",
+            sourceTitle = "Anker A121D Official + LTT Labs Testing",
+            sourceUrl = "https://www.anker.com/products/a121d-45w-usb-c-fast-charger-foldable-plug-compact"
+        ),
+        ChargerSpecProfile(
+            brand = "Anker",
+            productName = "Anker Prime Charger (100W, 3 Ports, GaN)",
+            modelCode = "A2688",
+            maxPowerW = 100,
+            portsConfig = "2x USB-C + 1x USB-A (3 cổng dùng chung tối đa 89W theo hãng)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.0 (suy ra từ PDO; QC/PPS chưa xác minh đầy đủ, đừng ghi thêm)"),
+            pdoProfiles = "C1/C2 riêng: 5V/3A, 9V/3A, 15V/3A, 20V/5A (100W) • A: 5V/3A, 9V/2A, 10V/2,25A, 12V/1,5A (22,5W) • Chia: C1+C2 = 65W+35W; C1/C2+A = 65W+22,5W",
+            ppsOrAvsRange = "Chưa xác minh (trang chính hãng không công bố dải PPS cho A2688)",
+            dimensionsWeight = "43,5 × 29 × 67,8 mm • 170g (không tính chân cắm)",
+            accentColorHex = 0xFF00A9E0,
+            productImageUrl = "https://cdn.shopify.com/s/files/1/0493/7636/2660/files/A2688141_Rich_image_ND01_no_copy_5000x6258px_V1_1.png?v=1722951931",
+            verificationStatus = "Thông số công bố của hãng (2024, dòng Prime 07/08/2024; chưa có teardown)",
+            sourceTitle = "Anker A2688 Official + MacRumors Prime Launch 07/08/2024",
+            sourceUrl = "https://www.anker.com/products/a2688-anker-prime-charger-100w-3-ports-gan"
+        ),
+        ChargerSpecProfile(
+            brand = "Anker",
+            productName = "Anker Charger (140W, 4-Port, PD 3.1)",
+            modelCode = "A2697 (B2697 là mã bundle củ + cáp)",
+            maxPowerW = 140,
+            portsConfig = "3x USB-C + 1x USB-A, màn hình hiển thị công suất/nhiệt độ từng cổng (4 cổng cùng lúc 134W)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.1", "PPS", "BC1.2, Apple, QC 3.0, FCP, AFC (nguồn thứ cấp Amchoi, không phải bảng chính hãng)"),
+            pdoProfiles = "C1/C2 riêng: 9V/3A, 15V/3A, 20V/5A, 28V/5A (140W; chính hãng không liệt kê 5V cho C1/C2 một cổng) • C3: 5V/3A, 9V/3A, 15V/2,65A, 20V/2A (40W) • A1: 5V/3A, 9V/2A, 12V/1,5A, 10V/2,25A, 11V/3A (33W) • Chia: C1+C2 = 70W+70W; C1+C2+C3 = 65W+45W+30W",
+            ppsOrAvsRange = "PPS: 4,5–20V/5A (100W) cho C1/C2 (trang chính hãng Anker CA)",
+            dimensionsWeight = "69 × 69 × 36 mm • củ 275g, kèm cáp 395g (chính hãng; Amchoi ghi 295g — ưu tiên chính hãng)",
+            accentColorHex = 0xFF00A9E0,
+            productImageUrl = "https://us.anker.com/cdn/shop/files/A2697141_B2697141_Richimage_TD01_US_V1.png?v=1775123136&width=550",
+            verificationStatus = "Thông số công bố của hãng (CES 2025; chưa có teardown)",
+            sourceTitle = "Anker A2697 Official (CA) + Notebookcheck CES 2025",
+            sourceUrl = "https://www.anker.com/ca/products/a2697-anker-charger-140w-4-port"
+        ),
+        ChargerSpecProfile(
+            brand = "Samsung",
+            productName = "Samsung 25W PD Power Adapter",
+            modelCode = "EP-T2510 (kèm cáp US: EP-T2510XBEGUS; chỉ củ: EP-T2510NBEGUS)",
+            maxPowerW = 25,
+            portsConfig = "1x USB-C",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN Tech (Samsung ZA ghi; có thể khác theo vùng)",
+            supportedProtocols = listOf("USB PD 3.0", "PPS", "Samsung Super Fast Charging 25W"),
+            pdoProfiles = "5V/3A, 9V/2,77A",
+            ppsOrAvsRange = "PPS: 3,3–5,9V/3A hoặc 3,3–11,0V/2,25A",
+            dimensionsWeight = "46,0 × 26,2 × 68,9 mm • 73g (bản kèm cáp; bản EU leaflet 38 × 66,9 × 22 mm / 51,6g, bản US đại lý 49,0 × 68,74 × 27,1 mm / 87,7g — đã chọn 1 biến thể)",
+            accentColorHex = 0xFF1428A0,
+            productImageUrl = "https://images.samsung.com/is/image/samsung/p6pim/us/ep-t2510xbegus/gallery/us-25w-power-adapter-ep-t2510-579798-ep-t2510xbegus-553272381?\$product-details-jpg\$",
+            verificationStatus = "Thông số công bố của Samsung (2023: Amazon US Date First Available 11/10/2023; chưa có teardown)",
+            sourceTitle = "Samsung US: 25W PD Power Adapter EP-T2510",
+            sourceUrl = "https://www.samsung.com/us/mobile-accessories/25w-pd-power-adapter-with-usb-c-cable-black-sku-ep-t2510xbegus/"
+        ),
+        ChargerSpecProfile(
+            brand = "Samsung",
+            productName = "Samsung 45W PD Power Adapter",
+            modelCode = "EP-T4511 (kèm cáp 5A US: EP-T4511XBEGUS; chỉ củ: EP-T4511NBEGUS)",
+            maxPowerW = 45,
+            portsConfig = "1x USB-C",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "Chưa xác minh hãng có ghi GaN cho mẫu này hay không — đừng ghi GaN",
+            supportedProtocols = listOf("USB PD 3.0 PDO/PPS", "Samsung Super Fast Charging 2.0 45W"),
+            pdoProfiles = "5V/3A, 9V/3A, 15V/3A, 20V/2,25A",
+            ppsOrAvsRange = "PPS: 5,0–20,0V/2,25A (TUYỆT ĐỐI không dùng PPS 3,3–21V của mẫu cũ EP-T4510)",
+            dimensionsWeight = "48 × 75,6 × 28 mm • 100,1g (Samsung HK, chân HK/UK; biến thể EU 43,5 × 81,8 × 28 mm / 92,5g — đã chọn 1 biến thể)",
+            accentColorHex = 0xFF1428A0,
+            productImageUrl = "https://images.samsung.com/is/image/samsung/p6pim/us/ep-t4511xbegus/gallery/us-45w-power-adapter-ep-t4511-ep-t4511xbegus-549253526?\$product-details-jpg\$",
+            verificationStatus = "Thông số công bố của Samsung (năm ra mắt CHƯA XÁC MINH chính thức; chưa có teardown)",
+            sourceTitle = "Samsung HK: 45W Power Adapter EP-T4511",
+            sourceUrl = "https://www.samsung.com/hk_en/mobile-accessories/45w-power-adapter-black-ep-t4511xbeggb/"
+        ),
+        ChargerSpecProfile(
+            brand = "Samsung",
+            productName = "Samsung 60W Power Adapter",
+            modelCode = "EP-T6010 (bản US: EP-T6010NBEGUS)",
+            maxPowerW = 60,
+            portsConfig = "1x USB-C",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "Chưa xác minh GaN — đừng ghi GaN",
+            supportedProtocols = listOf("USB PD 3.1 PDO/PPS", "Samsung Super Fast Charging 3.0 60W"),
+            pdoProfiles = "5V/3A, 9V/3A, 15V/3A, 20V/3A",
+            ppsOrAvsRange = "PPS: 5–20V/3A",
+            dimensionsWeight = "48,0 × 73,7 × 28,0 mm • 121,0g (Samsung UAE; biến thể LB 46,0 × 85,3 × 28 mm / 114,59g, IN 60 × 78,4 × 34 mm / 167g — đã chọn 1 biến thể)",
+            accentColorHex = 0xFF1428A0,
+            productImageUrl = "https://images.samsung.com/is/image/samsung/p6pim/us/ep-t6010nbegus/gallery/us-60w-power-adapter-ep-t6010-black-ep-t6010nbegus-553353279?\$product-details-jpg\$",
+            verificationStatus = "Thông số công bố của Samsung (2026: Samsung Ấn Độ Launch date 25/02/2026; chưa có teardown)",
+            sourceTitle = "Samsung US: 60W PD Power Adapter EP-T6010",
+            sourceUrl = "https://www.samsung.com/us/mobile-accessories/60w-pd-power-adapter-black-sku-ep-t6010nbegus/"
+        ),
+        ChargerSpecProfile(
+            brand = "Cuktech",
+            productName = "CUKTECH 15 — 140W GaN Charger (4-Port)",
+            modelCode = "AD1404U (bản US: AD1404US)",
+            maxPowerW = 140,
+            portsConfig = "3x USB-C + 1x USB-A (hướng dẫn: C1/C2 140W, C3 100W, USB-A 33W; đa cổng ví dụ C1+C2 = 100W+33W, 4 cổng = 65W+45W+5V/1,5A+5V/1,5A)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.1", "PPS", "QC", "FCP", "SCP", "AFC (theo hướng dẫn)"),
+            pdoProfiles = "Chưa xác minh (tài liệu tìm được không liệt kê bảng PDO cố định đầy đủ; chỉ biết điện áp tối đa 28V theo listing và chuẩn PD 3.1)",
+            ppsOrAvsRange = "Chưa xác minh (chỉ biết hỗ trợ PPS, không có dải APDO)",
+            dimensionsWeight = "79,9 × 65 × 32 mm • 335g (trang chính thức; Notebookcheck ghi ~331g và C3 33W / USB-A 18W — mâu thuẫn, cần đối chiếu nhãn máy thật)",
+            accentColorHex = 0xFFFF6D00,
+            productImageUrl = "https://cuktech.com/cdn/shop/files/44b91ce6d41dd0b0dace3ce9bbfc99fc_b666a930-54b8-4fe1-b5e0-d998af1e37a7.jpg?v=1767667815",
+            verificationStatus = "Thông số công bố của hãng (2025, Notebookcheck 24/04/2025; chưa có teardown)",
+            sourceTitle = "CUKTECH Official 140W + Notebookcheck 2025",
+            sourceUrl = "https://cuktech.com/products/1406"
+        ),
+        ChargerSpecProfile(
+            brand = "Cuktech",
+            productName = "CUKTECH 10 Ultra Charger (120W, màn hình TFT)",
+            modelCode = "AD1204U",
+            maxPowerW = 120,
+            portsConfig = "3x USB-C + 1x USB-A, màn hình TFT 1,57 inch, Bluetooth, Mi Home (C1/C2 120W chỉ khi input 200–240V; input 100–130V tối đa 100W; tổng đa cổng 120W với 2 đầu vào / 110W với 1 đầu vào)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD", "PPS", "UFCS", "Xiaomi HyperCharge 120W", "Huawei SCP/FCP", "QC (công nghệ ADC2.0)"),
+            pdoProfiles = "C1/C2: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/5A, 11V/6A (100W); 20V/6A (120W, chỉ Input 2) • C3: 5V/3A, 9V/3A, 12V/2,5A, 15V/2A, 11V/4A (44W) • USB-A: 5V/3A, 9V/2A, 12V/1,5A, 11V/3A (33W)",
+            ppsOrAvsRange = "Chưa xác minh (hướng dẫn chỉ ghi hỗ trợ PPS trong nhóm ADC2.0, không có dải APDO)",
+            dimensionsWeight = "67 × 76 × 33 mm • ~234g (TaiwanNews)",
+            accentColorHex = 0xFFFF6D00,
+            productImageUrl = "https://manuals.plus/ae/1005009872196070/images/S42e1e8deac4949dcb6207bd51906b887X.jpg",
+            verificationStatus = "Thông số từ hướng dẫn + báo chí (2026, Philippines; chưa tìm thấy trang chính thức cuktech.com cho mẫu này, chưa có teardown — ảnh tạm từ manuals.plus)",
+            sourceTitle = "CUKTECH 10 Ultra — Manuals.plus + TaiwanNews 01/06/2026",
+            sourceUrl = "https://manuals.plus/ae/1005009872196070"
+        ),
+        ChargerSpecProfile(
+            brand = "Cuktech",
+            productName = "CUKTECH Multi-ports GaN Charger 65W (2C1A, A15C)",
+            modelCode = "A15CEU (hướng dẫn/FCC: AD653N)",
+            maxPowerW = 65,
+            portsConfig = "2x USB-C + 1x USB-A (C1/C2 65W, USB-A 5V/3A, 9V/2,5A, 10V/2,25A, 12V/1,87A)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.0", "PPS", "QC 4+/3.0", "Samsung Super Fast Charging 2.0", "AFC", "FCP", "SCP"),
+            pdoProfiles = "C1/C2: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/3,25A (65W)",
+            ppsOrAvsRange = "Chưa xác minh (trang chính hãng chỉ ghi hỗ trợ PPS, không có dải APDO)",
+            dimensionsWeight = "53 × 28 × 53,9 mm • 143g (cân nặng theo Digitec, không phải trang chính hãng)",
+            accentColorHex = 0xFFFF6D00,
+            productImageUrl = "https://cuktech.com/cdn/shop/files/A1501.jpg?v=1740972614",
+            verificationStatus = "Thông số công bố của hãng (bằng chứng sớm nhất: file hướng dẫn 07/09/2023, chưa có thông cáo ra mắt chính thức; chưa có teardown)",
+            sourceTitle = "CUKTECH Official A15C 65W GaN Charger 2C1A",
+            sourceUrl = "https://cuktech.com/products/a15c-cuktech-65w-gan-charger-2c1a"
+        ),
+        ChargerSpecProfile(
+            brand = "Ugreen",
+            productName = "UGREEN Nexode Pro 100W 3-Port GaN Mini Fast Charger",
+            modelCode = "X757 (SKU EU: 15203)",
+            maxPowerW = 100,
+            portsConfig = "2x USB-C + 1x USB-A",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.0", "PPS", "QC 4+/3.0/2.0", "SCP (10V/2,25A)", "FCP", "AFC", "Apple 5V/2,4A", "Samsung 5V/2A", "BC1.2"),
+            pdoProfiles = "C1: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/5A (100W) • C2: 5V/3A, 9V/3A, 12V/2,5A (30W) • A: 5V/3A, 9V/2A, 12V/1,5A, 10V/2,25A (22,5W)",
+            ppsOrAvsRange = "Chưa xác minh (trang chính hãng chỉ ghi có PPS, không công bố dải PPS)",
+            dimensionsWeight = "71 × 43 × 33 mm • cân nặng chưa xác minh (trang chính hãng không ghi)",
+            accentColorHex = 0xFF2EBD85,
+            productImageUrl = "https://eu.ugreen.com/cdn/shop/products/nexode-pro-100w-3-port-gan-mini-fast-charger-993773.png?v=1702514271&width=400",
+            verificationStatus = "Thông số công bố của hãng (dòng Nexode Pro công bố 20/12/2023; chưa có teardown)",
+            sourceTitle = "UGREEN EU: Nexode Pro 100W + Mighty Gadget",
+            sourceUrl = "https://eu.ugreen.com/products/ugreen-nexode-pro-100w-gan-fast-charger"
+        ),
+        ChargerSpecProfile(
+            brand = "Ugreen",
+            productName = "UGREEN Nexode Pro 160W 4-Port GaN Mini Fast Charger",
+            modelCode = "X763 (SKU EU: 25095; bản Ấn Độ: 25877)",
+            maxPowerW = 160,
+            portsConfig = "3x USB-C + 1x USB-A (tổng 160W, cổng đơn tối đa 140W)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("UFCS", "USB PD 3.1/3.0", "PPS", "QC 5/QC 4+/QC 3+", "SCP (10V/2,25A)", "FCP", "AFC", "Apple 5V/2,4A", "Samsung 5V/2A", "BC1.2"),
+            pdoProfiles = "C1: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/5A, 28V/5A (140W) • C2: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/5A (100W) • C3: 5V/3A, 9V/3A, 12V/2,5A (30W) • A: 5V/3A, 9V/2A, 12V/1,5A, 10V/2,25A (22,5W)",
+            ppsOrAvsRange = "Chưa xác minh (trang chính hãng chỉ ghi có PPS, không công bố dải PPS)",
+            dimensionsWeight = "70 × 70 × 33 mm • 443g (trang chính hãng EU)",
+            accentColorHex = 0xFF2EBD85,
+            productImageUrl = "https://eu.ugreen.com/cdn/shop/products/nexode-pro-160w-4-port-gan-mini-fast-charger-339786.png?v=1702514272&width=400",
+            verificationStatus = "Thông số công bố của hãng (dòng Nexode Pro công bố 20/12/2023; chưa có teardown; Nexode 140W CD289 bị loại vì ra mắt 2022)",
+            sourceTitle = "UGREEN EU: Nexode Pro 160W + Mighty Gadget",
+            sourceUrl = "https://eu.ugreen.com/de/collections/3c-products/products/ugreen-nexode-pro-160w-gan-fast-charger"
+        ),
+        ChargerSpecProfile(
+            brand = "Ugreen",
+            productName = "UGREEN Nexode Air 65W USB-C Charger (GaN, Foldable Plug)",
+            modelCode = "X860 (SKU toàn cầu: 95169; SKU US: 75813)",
+            maxPowerW = 65,
+            portsConfig = "1x USB-C (kèm cáp USB-C 1m 100W trong hộp theo Notebookcheck)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.0", "PD 3.2 65W (đo TinkerVault)", "QC 3.0/2.0", "AFC", "FCP", "Apple 5V/2,4A", "BC1.2", "AVS SPR 9–20V/3A (đo TinkerVault)"),
+            pdoProfiles = "5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/3,25A (65W)",
+            ppsOrAvsRange = "PPS: 5–11V/5A (đo bằng KM003C, TinkerVault; hãng chỉ ghi chung là có PPS)",
+            dimensionsWeight = "~40,5 × 33 × 31 mm • ~73g (Notebookcheck; bản EU TinkerVault: 33 × 31 × 40 mm / 76g — chênh do biến thể phích cắm)",
+            accentColorHex = 0xFF2EBD85,
+            productImageUrl = "https://us.ugreen.com/cdn/shop/files/ugreen-nexode-air-usb-c-charger-65w-gan-foldable-plug-3874335.webp?v=1778877729&width=100",
+            verificationStatus = "Thông số công bố của hãng + đo kiểm (2026, dòng Nexode Air; chưa có teardown)",
+            sourceTitle = "UGREEN US: Nexode Air 65W + Notebookcheck 23/06/2026",
+            sourceUrl = "https://us.ugreen.com/products/nexode-air-usb-c-charger-65w-gan-foldable-plug"
+        ),
+        ChargerSpecProfile(
+            brand = "CMF by Nothing",
+            productName = "CMF Power 65W GaN (thương hiệu con của Nothing)",
+            modelCode = "Chưa xác minh (mã model) — trang hỗ trợ CMF không ghi mã; các shop ghi mâu thuẫn C332 / A10800007",
+            maxPowerW = 65,
+            portsConfig = "2x USB-C + 1x USB-A (C1+C2 = 45W+20W; C1+A = 45W+18W; C1+C2+A = 45W+15W)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN",
+            supportedProtocols = listOf("USB PD 3.0", "QC 4.0+/3.0/2.0", "SCP", "FCP", "PPS", "AFC", "Apple 2.4A", "Samsung 9V2A", "DCP"),
+            pdoProfiles = "C1/C2: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/3,25A (65W) • A: 5V/3A, 9V/3A, 12V/3A (36W)",
+            ppsOrAvsRange = "PPS: 3,3–11V/5A (16,5–55W) / 5–20V/3,25A (16,25–65W)",
+            dimensionsWeight = "56,5 × 55 × 30 mm • 146,1g (bản US; bản UK 65,8 × 55 × 30 mm / 162g)",
+            accentColorHex = 0xFFFF6A00,
+            productImageUrl = "",
+            verificationStatus = "Thông số từ bảng hãng trích trên trang bán lẻ (2023, công bố 26/09/2023; chưa có teardown; chưa có URL ảnh chính thức xác minh nên app hiển thị fallback hãng + W)",
+            sourceTitle = "CMF Power 65W GaN — bảng thông số (Taham Tech) + Business Standard 26/09/2023",
+            sourceUrl = "https://tahamtech.com.bd/product/cmf-by-nothing-power-65w-gan-fast-charger-dual-usb-c-usb-a/"
+        ),
+        ChargerSpecProfile(
+            brand = "Nothing",
+            productName = "Nothing Power (45W) — củ sạc chính hãng duy nhất của Nothing",
+            modelCode = "C347 / C304 (theo trang bán lẻ; chưa xác minh chính thức)",
+            maxPowerW = 45,
+            portsConfig = "1x USB-C (không kèm cáp theo một số listing)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "Chưa xác minh GaN — đừng ghi GaN",
+            supportedProtocols = listOf("USB PD 3.0", "PPS", "QC 4.0+", "QC 3.0", "QC 2.0"),
+            pdoProfiles = "5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/2,25A (45W)",
+            ppsOrAvsRange = "PPS: 3,3–11V/4,05A và 3,3–21V/2,14A",
+            dimensionsWeight = "33,4 × 44,8 × 89,5 mm (EU) • 101g (EU; US 96g, UK 113g, IN 121g, IN 33,4 × 44,8 × 79,6 mm — nguồn bán lẻ, chưa thống nhất)",
+            accentColorHex = 0xFFF5F5F5,
+            productImageUrl = "",
+            verificationStatus = "Thông số từ trang bán lẻ (2022 — NGOÀI khung 3 năm, giữ vì là củ Nothing duy nhất; chưa có teardown; chưa có URL ảnh chính thức xác minh nên app hiển thị fallback hãng + W)",
+            sourceTitle = "Nothing 45W Power Adapter — bảng thông số (CMF Bangladesh, bán lẻ)",
+            sourceUrl = "https://cmf.com.bd/product/nothing-45w-power-adapter/"
+        ),
+        ChargerSpecProfile(
+            brand = "Baseus",
+            productName = "Baseus GaN2 Lite Quick Charger C+U 65W (ngoại lệ theo yêu cầu)",
+            modelCode = "CGAN65US (theo yêu cầu — CHƯA XÁC MINH công khai; alias đã xác minh: CCGAN2L-B02 trắng EU / CCGAN2L-B01 đen EU)",
+            maxPowerW = 65,
+            portsConfig = "1x USB-C + 1x USB-A (KHÔNG phải single-port; C riêng 65W, A riêng 45W, đồng thời 45W+18W = 63W)",
+            primaryControllerIc = "Chưa công bố teardown",
+            protocolChipIc = "Chưa công bố teardown",
+            ganPowerFet = "GaN2 (chi tiết IC chưa công bố)",
+            supportedProtocols = listOf("USB PD 3.0", "QC 3.0", "PPS", "SCP", "FCP", "AFC", "QC 4.0/4.0+ cho cổng USB-A (Baltrade B01)"),
+            pdoProfiles = "USB-C: 5V/3A, 9V/3A, 12V/3A, 15V/3A, 20V/3,25A • USB-A: 4,5V/5A, 5V/4,5A, 5V/3A, 9V/3A, 12V/3A, 20V/2,25A (Digitec; Baltrade B01 không liệt kê 4,5V/5A)",
+            ppsOrAvsRange = "Chưa xác minh (các nguồn chỉ ghi tên PPS, không có dải APDO cho bản C+U)",
+            dimensionsWeight = "100 × 35 × 30 mm • 115g (Digitec B02; B01 ghi 35 × 30 × 99 mm / 110g — cùng thân máy, chênh do cách đo)",
+            accentColorHex = 0xFF00E5FF,
+            productImageUrl = "https://www.shop.baltrade.eu/img/product/medium/baseus-gan2-lite-ccgan2l-b01-65w-szybka-ladowarka-sieciowa-z-gniazdem-usb-c-pd-3-0-oraz-usb-qc4-0-8.jpg",
+            verificationStatus = "Một phần xác minh — mã CGAN65US và trang chính thức riêng chưa xác minh; thông số theo dòng CCGAN2L-B01/B02; 2022 (ngoài khung 3 năm, ngoại lệ theo yêu cầu); chưa có teardown; 'Lite' không có định nghĩa chính thức (chỉ ghi nhỏ/nhẹ hơn ~30% theo Baltrade)",
+            sourceTitle = "Baseus GaN2 Lite C+U 65W — Digitec + Baltrade (CCGAN2L-B01/B02)",
+            sourceUrl = "https://www.digitec.ch/en/s1/product/baseus-gan2-lite-quick-chargercu-65w-eu-white-65-w-1-portion-usb-chargers-21090035"
         )
     )
 
@@ -1455,7 +1749,7 @@ class ChargingMonitorService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("Battery Power Monitor (Liquid Glass v3.2)")
+            .setContentTitle("Battery Power Monitor (Skeuomorphism + Aqua v3.3)")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -1475,87 +1769,67 @@ class ChargingMonitorService : Service() {
 }
 
 // ============================================================================
-// 7. HỆ THỐNG DESIGN ENGINE "LIQUID GLASS" (KÍNH LÔNG MỜ & PHẢN CHIẾU ÁNH SÁNG)
+// 7. HỆ THỐNG DESIGN ENGINE "SKEUOMORPHISM + AQUA" (KIM LOẠI CHẢI XƯỚC, NÚT GEL, Ô LCD LÕM)
 // ============================================================================
 
 /**
- * Nền động Liquid Mesh Orbs tạo hiệu ứng ánh sáng chuyển động phía dưới các tấm kính mờ
+ * Nền graphite chải xước tĩnh + thanh công cụ Aqua sáng, thay cho nền orb chuyển động cũ
  */
 @Composable
-fun LiquidGlassAmbientBackground(
+fun AquaBrushedBackground(
     isCharging: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "liquid_orbs")
-    val phase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 6.283185f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 14000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "orb_phase"
-    )
-
-    Canvas(modifier = modifier.fillMaxSize().background(Color(0xFF050814))) {
-        val w = size.width
-        val h = size.height
-
-        // Quả cầu ánh sáng 1 (Emerald / Cyan chuyển động theo quỹ đạo Lissajous)
-        val orb1Center = Offset(
-            x = w * (0.25f + 0.18f * cos(phase)),
-            y = h * (0.22f + 0.14f * sin(phase))
-        )
-        val orb1Color = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(orb1Color.copy(alpha = 0.28f), Color.Transparent),
-                center = orb1Center,
-                radius = w.coerceAtLeast(h) * 0.45f
-            ),
-            center = orb1Center,
-            radius = w.coerceAtLeast(h) * 0.45f
-        )
-
-        // Quả cầu ánh sáng 2 (Electric Blue / Indigo)
-        val orb2Center = Offset(
-            x = w * (0.78f + 0.15f * sin(phase * 0.8f)),
-            y = h * (0.48f + 0.18f * cos(phase * 0.8f))
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFF0284C7).copy(alpha = 0.26f), Color.Transparent),
-                center = orb2Center,
-                radius = w.coerceAtLeast(h) * 0.48f
-            ),
-            center = orb2Center,
-            radius = w.coerceAtLeast(h) * 0.48f
-        )
-
-        // Quả cầu ánh sáng 3 (Violet / Magenta phản chiếu vùng đáy)
-        val orb3Center = Offset(
-            x = w * (0.45f + 0.22f * cos(phase + 2.1f)),
-            y = h * (0.82f + 0.12f * sin(phase + 2.1f))
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFF8B5CF6).copy(alpha = 0.22f), Color.Transparent),
-                center = orb3Center,
-                radius = w.coerceAtLeast(h) * 0.42f
-            ),
-            center = orb3Center,
-            radius = w.coerceAtLeast(h) * 0.42f
-        )
+    // Nền "graphite chải xước" tĩnh kiểu Skeuomorphism: không còn orb chuyển động
+    // kiểu kính mờ cũ, vừa tiết kiệm pin vừa giống mặt panel của một thiết bị đo thật.
+    // Lớp chrome Aqua sáng chỉ nằm ở thanh công cụ phía trên, còn vùng nội dung là
+    // panel graphite tối để toàn bộ chữ sáng sẵn có trong app vẫn đọc được.
+    val glowColor = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFF1B2436), Color(0xFF0D1220), Color(0xFF080C16))
+                )
+            )
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Vân chải xước ngang: xen kẽ sợi sáng / sợi tối, mỗi sợi cách nhau 4px.
+            var y = 0f
+            var light = true
+            while (y < size.height) {
+                drawLine(
+                    color = if (light) Color.White.copy(alpha = 0.025f) else Color.Black.copy(alpha = 0.05f),
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1f
+                )
+                y += 4f
+                light = !light
+            }
+            // Ánh sáng trạng thái tĩnh ở mép trên, không nhấp nháy, không animation.
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(glowColor.copy(alpha = 0.10f), Color.Transparent),
+                    startY = 0f,
+                    endY = size.height * 0.22f
+                )
+            )
+        }
     }
 }
 
 /**
- * Tấm thẻ "Liquid Glass" (Kính lông mờ đa lớp + Viền phản quang Specular + Vệt khúc xạ đỉnh kính)
+ * Tấm panel Skeuomorphism + Aqua: kim loại graphite có viền bevel (sáng trên, tối dưới),
+ * bóng đổ thật và một dải gloss Aqua ở mép trên — thay cho lớp kính lông mờ cũ.
+ * Giữ nguyên chữ ký hàm cũ (tintColor / glassAlpha / specularAccent) để mọi nơi gọi
+ * AquaSkeuoCard trước đây không phải sửa lại tham số; glassAlpha nay hiểu là độ gloss.
  */
 @Composable
-fun LiquidGlassCard(
+fun AquaSkeuoCard(
     modifier: Modifier = Modifier,
-    cornerRadius: Dp = 22.dp,
+    cornerRadius: Dp = 14.dp,
     tintColor: Color = Color(0xFF1E293B),
     glassAlpha: Float = 0.52f,
     specularAccent: Color = Color.White,
@@ -1563,60 +1837,55 @@ fun LiquidGlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
+    val gloss = (glassAlpha * 0.45f).coerceIn(0.10f, 0.35f)
     val baseMod = modifier
         .shadow(
-            elevation = 14.dp,
+            elevation = 8.dp,
             shape = shape,
-            ambientColor = specularAccent.copy(alpha = 0.18f),
-            spotColor = specularAccent.copy(alpha = 0.25f)
+            ambientColor = Color.Black.copy(alpha = 0.45f),
+            spotColor = Color.Black.copy(alpha = 0.55f)
         )
         .clip(shape)
         .background(
-            brush = Brush.linearGradient(
+            brush = Brush.verticalGradient(
                 colors = listOf(
-                    Color.White.copy(alpha = 0.16f),
-                    tintColor.copy(alpha = glassAlpha),
-                    Color(0xFF090D1A).copy(alpha = (glassAlpha + 0.22f).coerceAtMost(0.88f))
-                ),
-                start = Offset(0f, 0f),
-                end = Offset(900f, 900f)
+                    Color.White.copy(alpha = gloss),
+                    tintColor,
+                    tintColor,
+                    Color.Black.copy(alpha = 0.28f)
+                )
             )
         )
-        .border(
-            BorderStroke(
-                width = 1.2.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        specularAccent.copy(alpha = 0.65f),
-                        Color.White.copy(alpha = 0.18f),
-                        Color.White.copy(alpha = 0.04f),
-                        specularAccent.copy(alpha = 0.28f)
-                    ),
-                    start = Offset(0f, 0f),
-                    end = Offset(600f, 600f)
-                )
-            ),
-            shape = shape
-        )
+        // Bevel: viền ngoài tối + viền sáng trong mô phỏng mép kim loại được vát.
+        .border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.65f)), shape = shape)
+        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), shape = shape)
         .let { m -> if (onClick != null) m.clickable { onClick() } else m }
 
     Box(modifier = baseMod) {
-        // Vệt phản chiếu ánh sáng (Specular Caustic Sheen) ở mép trên của lớp kính lông mờ
+        // Dải gloss Aqua ở mép trên: sáng nhất ở đỉnh rồi mờ dần xuống, như nút gel macOS X.
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(36.dp)
+                .height(20.dp)
                 .align(Alignment.TopCenter)
         ) {
             drawRoundRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        specularAccent.copy(alpha = 0.20f),
-                        Color.White.copy(alpha = 0.05f),
+                        Color.White.copy(alpha = 0.28f),
+                        Color.White.copy(alpha = 0.06f),
                         Color.Transparent
                     )
                 ),
                 cornerRadius = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx())
+            )
+            // Đường viền sáng 1px ngay mép trên của panel.
+            drawLine(
+                color = specularAccent.copy(alpha = 0.45f),
+                start = Offset(8f, 1f),
+                end = Offset(size.width - 8f, 1f),
+                strokeWidth = 1f,
+                cap = StrokeCap.Round
             )
         }
         Column(
@@ -1627,11 +1896,12 @@ fun LiquidGlassCard(
 }
 
 /**
- * Khu vực Menu Liquid Glass nằm nổi ở lớp trên cùng (Top Z-Index Layer),
- * phản chiếu ánh sáng động qua hiệu ứng kính lông mờ xuống các thành phần bên dưới.
+ * Thanh công cụ Aqua kiểu macOS X: chrome sáng, segmented control gel, đèn LED trạng thái.
+ * Dấu ấn Bé chọn: thanh chrome sáng + panel nội dung graphite tối (như một máy đo để bàn:
+ * vỏ chrome, mặt máy tối), thay vì toàn bộ app sáng hay toàn bộ app kính mờ.
  */
 @Composable
-fun LiquidGlassTopMenuOverlay(
+fun AquaTopBar(
     selectedTab: Int,
     onSelectTab: (Int) -> Unit,
     isTabletLandscape: Boolean,
@@ -1646,81 +1916,48 @@ fun LiquidGlassTopMenuOverlay(
     isCharging: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "menu_shimmer")
-    val shimmerOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1200f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "shimmer_x"
-    )
-
     val glowColor = if (isCharging) Color(0xFF00E676) else Color(0xFF38BDF8)
-    val menuShape = RoundedCornerShape(26.dp)
+    val menuShape = RoundedCornerShape(14.dp)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 10.dp)
             .shadow(
-                elevation = 24.dp,
+                elevation = 6.dp,
                 shape = menuShape,
-                ambientColor = glowColor.copy(alpha = 0.35f),
-                spotColor = glowColor.copy(alpha = 0.45f)
+                ambientColor = Color.Black.copy(alpha = 0.35f),
+                spotColor = Color.Black.copy(alpha = 0.45f)
             )
             .clip(menuShape)
             .background(
-                brush = Brush.linearGradient(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.24f),
-                        Color(0xFF1E293B).copy(alpha = 0.68f),
-                        Color(0xFF0F172A).copy(alpha = 0.76f),
-                        glowColor.copy(alpha = 0.18f)
-                    ),
-                    start = Offset(shimmerOffset * 0.3f, 0f),
-                    end = Offset(shimmerOffset + 500f, 320f)
+                        Color(0xFFF8FAFC),
+                        Color(0xFFDCE6F2),
+                        Color(0xFFB9C9DE)
+                    )
                 )
             )
-            .border(
-                BorderStroke(
-                    width = 1.5.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.85f),
-                            glowColor.copy(alpha = 0.55f),
-                            Color.White.copy(alpha = 0.15f),
-                            Color(0xFF38BDF8).copy(alpha = 0.50f)
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(1000f, 200f)
-                    )
-                ),
-                shape = menuShape
-            )
+            .border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.35f)), shape = menuShape)
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)), shape = menuShape)
     ) {
-        // Lớp phản xạ ánh sáng đỉnh kính (Top Specular Highlight Strip)
+        // Dải gloss Aqua trên cùng của thanh công cụ.
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(28.dp)
+                .height(22.dp)
                 .align(Alignment.TopCenter)
         ) {
-            drawLine(
-                brush = Brush.horizontalGradient(
+            drawRoundRect(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.Transparent,
-                        Color.White.copy(alpha = 0.75f),
-                        glowColor.copy(alpha = 0.65f),
-                        Color.White.copy(alpha = 0.75f),
+                        Color.White.copy(alpha = 0.65f),
+                        Color.White.copy(alpha = 0.10f),
                         Color.Transparent
                     )
                 ),
-                start = Offset(size.width * 0.08f, 2.dp.toPx()),
-                end = Offset(size.width * 0.92f, 2.dp.toPx()),
-                strokeWidth = 2.5.dp.toPx(),
-                cap = StrokeCap.Round
+                cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
             )
         }
 
@@ -1738,16 +1975,17 @@ fun LiquidGlassTopMenuOverlay(
                     Box(
                         modifier = Modifier
                             .size(34.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(9.dp))
                             .background(
-                                Brush.linearGradient(
+                                Brush.verticalGradient(
                                     colors = listOf(
-                                        glowColor.copy(alpha = 0.45f),
-                                        Color.White.copy(alpha = 0.15f)
+                                        Color.White.copy(alpha = 0.55f),
+                                        glowColor,
+                                        glowColor.copy(alpha = 0.75f)
                                     )
                                 )
                             )
-                            .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
+                            .border(1.dp, Color.Black.copy(alpha = 0.30f), RoundedCornerShape(9.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(text = "⚡", fontSize = 17.sp)
@@ -1756,11 +1994,11 @@ fun LiquidGlassTopMenuOverlay(
                     Column {
                         Text(
                             text = if (isTabletLandscape) {
-                                "Battery Power Monitor • Liquid Glass Dual-Window (Tablet Landscape)"
+                                "Battery Power Monitor • Skeuomorphism + Aqua"
                             } else {
-                                "Battery Power Monitor • Liquid Glass UI"
+                                "Battery Power Monitor • Skeuomorphism + Aqua"
                             },
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold,
                             maxLines = 1,
@@ -1768,11 +2006,11 @@ fun LiquidGlassTopMenuOverlay(
                         )
                         Text(
                             text = if (isTabletLandscape) {
-                                "Bố cục cửa sổ song song • Lớp kính lông mờ phản chiếu ánh sáng thời gian thực"
+                                "Chrome Aqua • Panel graphite • Nút gel • Ô LCD lõm"
                             } else {
                                 "3 Chế độ: Phổ thông • ADB (Shizuku) • Root Toàn Quyền"
                             },
-                            color = Color(0xFFBAE6FD),
+                            color = Color(0xFF475569),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
@@ -1781,18 +2019,14 @@ fun LiquidGlassTopMenuOverlay(
                     }
                 }
 
-                // Viên thuốc trạng thái phản quang
+                // Đèn LED trạng thái kiểu thiết bị thật: xanh lá khi đang REC, xanh dương khi chờ.
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(
-                            if (isRecording) Color(0xFF00E676).copy(alpha = 0.25f)
-                            else Color.White.copy(alpha = 0.12f)
-                        )
+                        .background(Color.White.copy(alpha = 0.70f))
                         .border(
                             1.dp,
-                            if (isRecording) Color(0xFF00E676).copy(alpha = 0.7f)
-                            else Color.White.copy(alpha = 0.35f),
+                            Color.Black.copy(alpha = 0.25f),
                             RoundedCornerShape(50)
                         )
                         .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1800,14 +2034,16 @@ fun LiquidGlassTopMenuOverlay(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(8.dp)
+                                .size(9.dp)
+                                .shadow(4.dp, CircleShape, ambientColor = if (isRecording) Color(0xFF00C853) else Color(0xFF38BDF8))
                                 .clip(CircleShape)
-                                .background(if (isRecording) Color(0xFF00E676) else Color(0xFF38BDF8))
+                                .background(if (isRecording) Color(0xFF00C853) else Color(0xFF38BDF8))
+                                .border(1.dp, Color.Black.copy(alpha = 0.25f), CircleShape)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isRecording) "REC CSV ($samplesCount)" else privilegeMode.shortTitle,
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
@@ -1817,9 +2053,9 @@ fun LiquidGlassTopMenuOverlay(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Thanh điều hướng kính mờ:
-            // - Ở màn hình dọc / điện thoại: Chọn 1 trong 3 Tab.
-            // - Ở chế độ Máy tính bảng xoay ngang (Parallel Split-Window): Cho phép chọn nhanh tổ hợp Cửa sổ Trái & Cửa sổ Phải hoặc mở cả 3.
+            // Điều hướng kiểu Aqua segmented control (Bé chọn thay cho pill kính mờ):
+            // - Điện thoại dọc: 1 segmented control chọn 1 trong 3 Tab.
+            // - Tablet xoay ngang: 2 segmented control độc lập cho Cửa sổ Trái / Phải.
             val paneTitles = listOf(
                 0 to "⚡ Đo & Chế Độ",
                 1 to "🔌 Tra Cứu Củ Sạc",
@@ -1833,7 +2069,7 @@ fun LiquidGlassTopMenuOverlay(
                 ) {
                     paneTitles.forEach { (idx, title) ->
                         val active = selectedTab == idx
-                        LiquidGlassPillButton(
+                        AquaSegmentButton(
                             text = title,
                             isSelected = active,
                             accentColor = glowColor,
@@ -1843,7 +2079,6 @@ fun LiquidGlassTopMenuOverlay(
                     }
                 }
             } else {
-                // Chế độ Tablet / Xoay ngang: Điều khiển Cửa sổ Song Song (Parallel Windows)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1856,15 +2091,15 @@ fun LiquidGlassTopMenuOverlay(
                     ) {
                         Text(
                             text = "Cửa sổ Trái:",
-                            color = Color(0xFFBAE6FD),
+                            color = Color(0xFF475569),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                         paneTitles.forEach { (idx, title) ->
-                            LiquidGlassPillButton(
+                            AquaSegmentButton(
                                 text = title,
                                 isSelected = splitLeftPane == idx,
-                                accentColor = Color(0xFF00E676),
+                                accentColor = Color(0xFF00C853),
                                 onClick = { onSplitLeftChange(idx) }
                             )
                         }
@@ -1879,12 +2114,12 @@ fun LiquidGlassTopMenuOverlay(
                     ) {
                         Text(
                             text = "Cửa sổ Phải:",
-                            color = Color(0xFFBAE6FD),
+                            color = Color(0xFF475569),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                         paneTitles.forEach { (idx, title) ->
-                            LiquidGlassPillButton(
+                            AquaSegmentButton(
                                 text = title,
                                 isSelected = splitRightPane == idx,
                                 accentColor = Color(0xFF38BDF8),
@@ -1899,44 +2134,52 @@ fun LiquidGlassTopMenuOverlay(
 }
 
 @Composable
-fun LiquidGlassPillButton(
+fun AquaSegmentButton(
     text: String,
     isSelected: Boolean,
     accentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    // Nút gel Aqua: khi chọn thì là gel xanh bóng, khi không chọn thì là nút kim loại
+    // sáng với chữ tối; khi nhấn (đang chọn) nút trông như bị lõm xuống nhờ viền tối hơn.
+    val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = modifier
+            .shadow(
+                elevation = if (isSelected) 2.dp else 4.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.30f),
+                spotColor = Color.Black.copy(alpha = 0.35f)
+            )
             .clip(shape)
             .background(
                 brush = if (isSelected) {
-                    Brush.linearGradient(
+                    Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.30f),
-                            accentColor.copy(alpha = 0.38f),
-                            accentColor.copy(alpha = 0.18f)
+                            Color.White.copy(alpha = 0.45f),
+                            accentColor,
+                            accentColor.copy(alpha = 0.70f)
                         )
                     )
                 } else {
-                    Brush.linearGradient(
+                    Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.08f),
-                            Color(0xFF0F172A).copy(alpha = 0.45f)
+                            Color.White,
+                            Color(0xFFD7DEE8),
+                            Color(0xFFB8C4D4)
                         )
                     )
                 }
             )
             .border(
-                width = if (isSelected) 1.3.dp else 1.dp,
-                brush = Brush.linearGradient(
-                    colors = if (isSelected) {
-                        listOf(Color.White.copy(alpha = 0.9f), accentColor.copy(alpha = 0.7f))
-                    } else {
-                        listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f))
-                    }
-                ),
+                width = 1.dp,
+                color = if (isSelected) Color.Black.copy(alpha = 0.45f) else Color.Black.copy(alpha = 0.30f),
+                shape = shape
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = if (isSelected) 0.35f else 0.65f),
                 shape = shape
             )
             .clickable { onClick() }
@@ -1945,7 +2188,7 @@ fun LiquidGlassPillButton(
     ) {
         Text(
             text = text,
-            color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+            color = if (isSelected) Color.White else Color(0xFF334155),
             fontSize = 11.sp,
             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
             maxLines = 1,
@@ -2119,8 +2362,8 @@ fun BatteryPowerMonitorApp() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // LỚP 0 (DƯỚI CÙNG): Nền ánh sáng Liquid Glass chuyển động liên tục
-        LiquidGlassAmbientBackground(isCharging = telemetry.isCharging)
+        // LỚP 0 (DƯỚI CÙNG): Nền graphite chải xước tĩnh kiểu Skeuomorphism
+        AquaBrushedBackground(isCharging = telemetry.isCharging)
 
         // LỚP 1 (GIỮA): Nội dung ứng dụng (1 cửa sổ ở Portrait hoặc 2 cửa sổ song song ở Tablet Landscape)
         if (!isTabletOrLandscape) {
@@ -2144,7 +2387,7 @@ fun BatteryPowerMonitorApp() {
                     RenderPaneByIndex(paneIndex = splitLeftPane, topPadding = topOverlayClearance)
                 }
 
-                // Thanh phân tách phát sáng kiểu sợi quang học (Liquid Optical Divider)
+                // Rãnh kim loại (groove) phân tách 2 cửa sổ song song
                 Box(
                     modifier = Modifier
                         .width(1.5.dp)
@@ -2154,9 +2397,9 @@ fun BatteryPowerMonitorApp() {
                             Brush.verticalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.45f),
-                                    Color(0xFF38BDF8).copy(alpha = 0.65f),
-                                    Color.White.copy(alpha = 0.45f),
+                                    Color.Black.copy(alpha = 0.65f),
+                                    Color.White.copy(alpha = 0.18f),
+                                    Color.Black.copy(alpha = 0.65f),
                                     Color.Transparent
                                 )
                             )
@@ -2174,9 +2417,8 @@ fun BatteryPowerMonitorApp() {
             }
         }
 
-        // LỚP 2 (TRÊN CÙNG - Z-INDEX CAO NHẤT): Khu vực Menu Liquid Glass nổi trên cùng,
-        // phản chiếu ánh sáng thông qua hiệu ứng kính lông mờ xuống các lớp đồ họa bên dưới
-        LiquidGlassTopMenuOverlay(
+        // LỚP 2 (TRÊN CÙNG - Z-INDEX CAO NHẤT): Thanh công cụ Aqua
+        AquaTopBar(
             selectedTab = selectedTab,
             onSelectTab = { selectedTab = it },
             isTabletLandscape = isTabletOrLandscape,
@@ -2197,7 +2439,7 @@ fun BatteryPowerMonitorApp() {
 }
 
 // ============================================================================
-// TAB 1: BỘ CHỌN 3 CHẾ ĐỘ + BẢNG ĐO CÔNG SUẤT THỜI GIAN THỰC (LIQUID GLASS)
+// TAB 1: BỘ CHỌN 3 CHẾ ĐỘ + BẢNG ĐO CÔNG SUẤT THỜI GIAN THỰC (SKEUOMORPHISM + AQUA)
 // ============================================================================
 
 @Composable
@@ -2224,9 +2466,9 @@ fun RealtimeDashboardTab(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
     ) {
-        // 1. Thẻ Chọn 3 Chế Độ Hoạt Động (Liquid Glass Card)
+        // 1. Thẻ Chọn 3 Chế Độ Hoạt Động (Panel Skeuo)
         item {
-            LiquidGlassCard(
+            AquaSkeuoCard(
                 specularAccent = Color(privilegeMode.badgeColorHex)
             ) {
                 Column(modifier = Modifier.padding(15.dp)) {
@@ -2243,7 +2485,7 @@ fun RealtimeDashboardTab(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         AppPrivilegeMode.entries.forEach { mode ->
-                            LiquidGlassPillButton(
+                            AquaSegmentButton(
                                 text = mode.shortTitle,
                                 isSelected = privilegeMode == mode,
                                 accentColor = Color(mode.badgeColorHex),
@@ -2296,13 +2538,13 @@ fun RealtimeDashboardTab(
                             if (privilegeMode == AppPrivilegeMode.ADB_SHIZUKU && !telemetry.sysfsReport.isPrivilegeGranted) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    LiquidGlassPillButton(
+                                    AquaSegmentButton(
                                         text = "Cấp quyền Shizuku",
                                         isSelected = true,
                                         accentColor = Color(0xFF0284C7),
                                         onClick = { PrivilegedTelemetryEngine.requestShizukuPermission() }
                                     )
-                                    LiquidGlassPillButton(
+                                    AquaSegmentButton(
                                         text = "Tải Shizuku ↗",
                                         isSelected = false,
                                         accentColor = Color(0xFF38BDF8),
@@ -2316,10 +2558,10 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 2. Thẻ Công suất chính — Liquid Glass Hero Card
+        // 2. Thẻ Công suất chính — Panel Skeuo
         item {
             val statusColor = if (telemetry.isCharging) Color(0xFF00E676) else Color(0xFFFFB74D)
-            LiquidGlassCard(
+            AquaSkeuoCard(
                 cornerRadius = 26.dp,
                 specularAccent = statusColor,
                 glassAlpha = 0.56f
@@ -2411,13 +2653,13 @@ fun RealtimeDashboardTab(
                             fontWeight = FontWeight.SemiBold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LiquidGlassPillButton(
+                            AquaSegmentButton(
                                 text = "1S (Pin đơn ~4.4V)",
                                 isSelected = cellSeriesCount == 1,
                                 accentColor = Color(0xFF38BDF8),
                                 onClick = { onCellSeriesChange(1) }
                             )
-                            LiquidGlassPillButton(
+                            AquaSegmentButton(
                                 text = "2S (Pin kép ×2)",
                                 isSelected = cellSeriesCount == 2,
                                 accentColor = Color(0xFF00E676),
@@ -2429,10 +2671,10 @@ fun RealtimeDashboardTab(
             }
         }
 
-        // 3. Thẻ Nhận diện Chuẩn Sạc (Liquid Glass)
+        // 3. Thẻ Nhận diện Chuẩn Sạc (Panel Skeuo)
         item {
             val accent = if (protocolResult.isVerifiedFromKernel) Color(0xFF00E676) else Color(0xFFF59E0B)
-            LiquidGlassCard(
+            AquaSkeuoCard(
                 tintColor = if (protocolResult.isVerifiedFromKernel) Color(0xFF064E3B) else Color(0xFF1E293B),
                 specularAccent = accent
             ) {
@@ -2512,7 +2754,7 @@ fun RealtimeDashboardTab(
 
         // 5. Bảng kiểm tra trực tiếp trạng thái đọc Node theo Chế độ
         item {
-            LiquidGlassCard(specularAccent = Color(0xFF38BDF8)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF38BDF8)) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
                         text = "THÔNG SỐ TRUY XUẤT THEO CHẾ ĐỘ: ${privilegeMode.shortTitle.uppercase()}",
@@ -2545,7 +2787,7 @@ fun RealtimeDashboardTab(
 
         // 6. Thẻ Củ Sạc Đối Chiếu Thủ Công
         item {
-            LiquidGlassCard(
+            AquaSkeuoCard(
                 specularAccent = Color(referenceCharger.accentColorHex),
                 onClick = onOpenChargerCatalog
             ) {
@@ -2630,7 +2872,7 @@ fun RealtimeDashboardTab(
 
         // 8. Biểu đồ công suất thời gian thực
         item {
-            LiquidGlassCard(
+            AquaSkeuoCard(
                 specularAccent = Color(0xFF00E676),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2675,7 +2917,7 @@ fun RealtimeDashboardTab(
             ) {
                 Text("Chu kỳ lấy mẫu:", color = Color(0xFFBAE6FD), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 listOf(500L to "0.5s", 1000L to "1.0s", 2000L to "2.0s").forEach { (ms, label) ->
-                    LiquidGlassPillButton(
+                    AquaSegmentButton(
                         text = label,
                         isSelected = refreshIntervalMs == ms,
                         accentColor = Color(0xFF00E676),
@@ -2712,7 +2954,7 @@ fun SysfsStatusRow(label: String, value: String, path: String, isOk: Boolean) {
 }
 
 // ============================================================================
-// TAB 2: THƯ VIỆN TRA CỨU CỦ SẠC & NGUỒN TEARDOWN KIỂM CHỨNG (LIQUID GLASS)
+// TAB 2: THƯ VIỆN TRA CỨU CỦ SẠC & NGUỒN TEARDOWN KIỂM CHỨNG (SKEUOMORPHISM + AQUA)
 // ============================================================================
 
 @Composable
@@ -2724,7 +2966,7 @@ fun ChargerDatabaseTab(
     topOverlayPadding: Dp = 120.dp
 ) {
     val context = LocalContext.current
-    val brands = listOf("Tất cả", "Apple", "Baseus", "Belkin", "Xiaomi")
+    val brands = listOf("Tất cả", "Apple", "Baseus", "Belkin", "Xiaomi", "Anker", "Samsung", "Cuktech", "Ugreen", "CMF by Nothing", "Nothing")
     val filteredChargers = remember(selectedBrand) {
         if (selectedBrand == "Tất cả") ChargerCatalogRepository.chargers
         else ChargerCatalogRepository.chargers.filter { it.brand == selectedBrand }
@@ -2738,7 +2980,7 @@ fun ChargerDatabaseTab(
         contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
     ) {
         item {
-            LiquidGlassCard(
+            AquaSkeuoCard(
                 tintColor = Color(0xFF172554),
                 specularAccent = Color(0xFF38BDF8)
             ) {
@@ -2766,7 +3008,7 @@ fun ChargerDatabaseTab(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 brands.forEach { brand ->
-                    LiquidGlassPillButton(
+                    AquaSegmentButton(
                         text = brand,
                         isSelected = selectedBrand == brand,
                         accentColor = Color(0xFF38BDF8),
@@ -2795,7 +3037,7 @@ fun ChargerDetailSpecCard(
     onClick: () -> Unit,
     onOpenSource: () -> Unit
 ) {
-    LiquidGlassCard(
+    AquaSkeuoCard(
         tintColor = if (isSelected) Color(0xFF064E3B) else Color(0xFF1E293B),
         specularAccent = if (isSelected) Color(0xFF00E676) else Color(charger.accentColorHex),
         onClick = onClick
@@ -2881,7 +3123,7 @@ fun ChargerDetailSpecCard(
                         .clickable { onOpenSource() }
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                LiquidGlassPillButton(
+                AquaSegmentButton(
                     text = "Mở nguồn ↗",
                     isSelected = false,
                     accentColor = Color(0xFF38BDF8),
@@ -2981,7 +3223,7 @@ fun CommercialChargerImage(
 }
 
 // ============================================================================
-// TAB 3: NHẬT KÝ SẠC STREAMING CSV + CHIA SẺ FILE (LIQUID GLASS)
+// TAB 3: NHẬT KÝ SẠC STREAMING CSV + CHIA SẺ FILE (SKEUOMORPHISM + AQUA)
 // ============================================================================
 
 @Composable
@@ -3005,7 +3247,7 @@ fun ChargingLogHistoryTab(
         contentPadding = PaddingValues(top = topOverlayPadding, bottom = 20.dp)
     ) {
         item {
-            LiquidGlassCard(specularAccent = Color(0xFF00E676)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF00E676)) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -3054,7 +3296,7 @@ fun ChargingLogHistoryTab(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        LiquidGlassPillButton(
+                        AquaSegmentButton(
                             text = if (isRecordingSession) "Đóng & Lưu phiên ngay" else "Bắt đầu ghi thủ công",
                             isSelected = true,
                             accentColor = if (isRecordingSession) Color(0xFFF59E0B) else Color(0xFF00E676),
@@ -3067,7 +3309,7 @@ fun ChargingLogHistoryTab(
 
         // Bảng mẫu đo gần nhất
         item {
-            LiquidGlassCard(specularAccent = Color(0xFF38BDF8)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF38BDF8)) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
                         text = "Dòng dữ liệu trực tiếp (${recentSamples.size}/120 mẫu hiển thị — Toàn bộ mẫu đã nằm trong CSV)",
@@ -3127,7 +3369,7 @@ fun ChargingLogHistoryTab(
 
         // Danh sách các phiên sạc đã lưu
         item {
-            LiquidGlassCard(specularAccent = Color(0xFF8B5CF6)) {
+            AquaSkeuoCard(specularAccent = Color(0xFF8B5CF6)) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -3211,7 +3453,7 @@ fun ChargingLogHistoryTab(
                                                 fontSize = 10.sp,
                                                 modifier = Modifier.weight(1f)
                                             )
-                                            LiquidGlassPillButton(
+                                            AquaSegmentButton(
                                                 text = "📤 Chia sẻ / Mở CSV",
                                                 isSelected = true,
                                                 accentColor = Color(0xFF00E676),
@@ -3230,7 +3472,7 @@ fun ChargingLogHistoryTab(
 }
 
 // ============================================================================
-// CÁC COMPONENT DÙNG CHUNG (LIQUID GLASS METRIC CARDS & BIỂU ĐỒ)
+// CÁC COMPONENT DÙNG CHUNG (SKEUOMORPHISM + AQUA)
 // ============================================================================
 
 @Composable
@@ -3241,7 +3483,7 @@ fun MetricCard(
     subValue: String,
     accentColor: Color
 ) {
-    LiquidGlassCard(
+    AquaSkeuoCard(
         modifier = modifier,
         cornerRadius = 18.dp,
         specularAccent = accentColor
@@ -3266,7 +3508,7 @@ fun SmallMetricCard(
     label: String,
     value: String
 ) {
-    LiquidGlassCard(
+    AquaSkeuoCard(
         modifier = modifier,
         cornerRadius = 14.dp,
         specularAccent = Color(0xFF7DD3FC)
