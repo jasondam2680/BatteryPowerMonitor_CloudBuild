@@ -571,7 +571,10 @@ object PrivilegedTelemetryEngine {
             kernelProtocolRaw = protoJoined,
             kernelProtocolPath = if (protoPath.isNotEmpty()) protoPath else "Đã đọc với quyền Root",
             extraDeveloperMetrics = rootExtra,
-            isVbusMeasured = (vbusV != null && vbusV >= 3.5f),
+            // FIX: vbusV là var bị lambda forEach capture nên Kotlin không smart-cast được
+            // sau null-check ("smart cast to 'Float' is impossible"). Dùng Elvis để giữ
+            // đúng hành vi cũ: null -> 0f -> false, >= 3.5f -> true.
+            isVbusMeasured = (vbusV ?: 0f) >= 3.5f,
             isKernelProtocolVerified = protoJoined.isNotEmpty()
         )
     }
