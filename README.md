@@ -1,4 +1,21 @@
-# Battery Power Monitor v3.4 (Bố cục V2 + Chủ đề sáng)
+# Battery Power Monitor v3.5 (Shizuku ổn định, bố cục V2)
+
+## Có gì mới ở v3.5 (sửa lỗi ngắt Shizuku liên tục, theo ảnh anh Jason gửi 08/11)
+
+**Triệu chứng:** cùng 1 củ sạc, cùng 1 phút, lúc đọc được VBUS 4,61V × 0,50A (= 2,31W, "XÁC THỰC QUA ADB"), lúc lại "(Không nhận được phản hồi từ tiến trình shell)" rồi rơi về "ƯỚC TÍNH TỪ P_BAT"; mục thông số truy xuất còn hiện "Đã tắt ở chế độ Phổ thông" dù header vẫn ghi chế độ 2.
+
+**Nguyên nhân gốc (trong code v3.4):**
+- Mỗi lần đo (1 giây/lần) app spawn 1 tiến trình shell MỚI qua Shizuku để chạy `dumpsys battery` — mỗi lần là 1 giao dịch binder + 1 phiên shell adbd mới qua Wi-Fi, chỉ cần 1 lần hiccup là lần đó chết, dù binder Shizuku vẫn sống ("Đã kết nối Shizuku: ADB Shell (UID 2000)").
+- `readText()` chờ tới khi process đóng stdout — KHÔNG có timeout thật; `waitFor(1500ms)` đặt SAU `readText()` nên vô tác dụng. Shell kẹt thì cả vòng đo đứng im; stderr không ai xả nên còn có thể deadlock. Process kẹt không bị destroy nên xác shell tồn đọng, lần sau càng dễ fail.
+- Một lần đọc lỗi là toàn bộ VBUS về null, chẩn đoán lật từ "XÁC THỰC QUA ADB" sang "ƯỚC TÍNH TỪ P_BAT"; report lỗi dùng nhầm giá trị mặc định của chế độ Phổ thông nên nhìn như app tự nhảy chế độ.
+
+**Cách sửa:**
+- **Shell thường trực:** mở 1 phiên `sh` qua Shizuku và tái dùng cho mọi lần đo (gửi lệnh qua stdin, đọc tới marker có nonce, timeout thật 3s). Shell kẹt/chết thì hủy hẳn và mở lại, có backoff 2s → 4s → 8s. Nếu mở shell thường trực không được, dự phòng spawn 1 lần nhưng có timeout thật + xả stderr + destroy khi quá hạn.
+- **Giữ số đo cuối:** một lần đọc lỗi không xóa VBUS — giữ report tốt cuối cùng tối đa 60s, ghi rõ lý do lỗi + số lần lỗi liên tiếp + số giây từ lần đo cuối.
+- **Probe VBUS 2s/lần** (P_bat vẫn 1s/lần): giá trị đàm phán thay đổi chậm, `dumpsys` nặng, không cần 1Hz.
+- **Nhãn trung thực:** IBUS lấy từ dumpsys "Max charging current" là GIỚI HẠN đàm phán, không phải dòng thực tế tức thời — UI giờ ghi "giới hạn đàm phán". (Bằng chứng: P_bat 2,61W từng lớn hơn P_vbus 2,31W, điều không thể xảy ra nếu cả hai đều là công suất thực.)
+
+**Anh cần chỉnh thêm trong app Shizuku (ảnh 7):** các mục "Bắt đầu khi khởi động", "Chó canh gác", "Chế độ TCP" của anh đã bật đúng — chỉ cần **TẮT "Auto-disable USB debugging"**: đang bật thì mỗi lần Shizuku dừng, USB debugging bị tắt theo, Shizuku không tự khởi động lại được nữa. Lưu ý: sau khi khởi động lại máy, Wireless Debugging mất pairing nên phải mở Shizuku bấm Start lại 1 lần — đó là giới hạn của Android, app giờ chỉ còn giữ số đo cuối trong lúc chờ anh bấm lại.
 
 ## Có gì mới ở v3.4 (theo yêu cầu ngày 24/10, sau v3.3.1)
 

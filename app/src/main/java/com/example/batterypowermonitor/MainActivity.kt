@@ -18,6 +18,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -75,6 +76,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.cos
@@ -134,7 +136,12 @@ data class SysfsProbeReport(
     val kernelProtocolPath: String = "Đã tắt ở chế độ Phổ thông",
     val extraDeveloperMetrics: String = "",
     val isVbusMeasured: Boolean = false,
-    val isKernelProtocolVerified: Boolean = false
+    val isKernelProtocolVerified: Boolean = false,
+    // v3.5: true khi IBUS không đọc được từ sysfs mà phải lấy từ dumpsys
+    // "Max charging current" — đó là GIỚI HẠN đàm phán, không phải dòng thực tế
+    // tức thời (bằng chứng: P_bat 2,61W từng lớn hơn P_vbus 2,31W, điều không
+    // thể xảy ra nếu cả hai đều là công suất thực).
+    val isIbusFromNegotiatedCap: Boolean = false
 )
 
 data class BatteryTelemetry(
@@ -243,10 +250,185 @@ object PrivilegedTelemetryEngine {
         } catch (_: Throwable) {}
     }
 
-    private fun execShizukuCommand(cmd: String): String {
+    // ========================================================================
+    // v3.5 — SỬA NGẮT KẾT NỐI SHIZUKU LIÊN TỤC (xem ảnh anh Jason gửi 08/11):
+    // Cùng 1 củ sạc, cùng 1 phút, lúc đọc được VBUS 4,61V × 0,50A (= 2,31W,
+    // "XÁC THỰC QUA ADB"), lúc lại "(Không nhận được phản hồi từ tiến trình
+    // shell)" rồi rơi về "ƯỚC TÍNH TỪ P_BAT". Nguyên nhân gốc nằm ở đây:
+    //
+    // 1. Mỗi lần đo (1 giây/lần) app spawn 1 tiến trình shell MỚI qua Shizuku
+    //    (newProcess "sh -c dumpsys battery...") — mỗi lần là 1 giao dịch
+    //    binder + 1 phiên shell adbd mới qua Wi-Fi. Chỉ cần 1 lần Wi-Fi/adbd
+    //    hiccup là lần spawn đó chết, dù Shizuku binder vẫn sống.
+    // 2. `readText()` chờ tới khi process đóng stdout — KHÔNG có timeout thật.
+    //    `waitFor(1500ms)` đặt SAU readText() nên không bao giờ có tác dụng:
+    //    nếu shell kẹt, cả vòng đo đứng im; nếu dumpsys ghi stderr nhiều,
+    //    buffer stderr đầy (không ai xả) còn gây deadlock.
+    // 3. Process kẹt không bao giờ bị destroy -> xác shell tồn đọng bên phía
+    //    Shizuku, lần spawn sau càng dễ fail.
+    // 4. Một lần đọc lỗi là toàn bộ VBUS về null: chẩn đoán lật từ "XÁC THỰC
+    //    QUA ADB" sang "ƯỚC TÍNH TỪ P_BAT", và report lỗi dùng NHẦM giá trị
+    //    mặc định của chế độ Phổ thông ("Đã tắt ở chế độ Phổ thông") nên nhìn
+    //    như app tự nhảy chế độ dù header vẫn ghi chế độ 2.
+    //
+    // Cách sửa (v3.5):
+    // a. Một phiên shell DUY NHẤT, mở 1 lần và tái dùng cho mọi lần đo: gửi
+    //    lệnh qua stdin, đọc tới marker có nonce, timeout thật 3s. Shell kẹt/
+    //    chết thì hủy hẳn và mở lại (có backoff), không để output thừa.
+    // b. Dự phòng one-shot spawn nhưng CÓ timeout thật (waitFor TRƯỚC khi đọc
+    //    xong, xả stderr trên thread riêng, destroy khi quá hạn).
+    // c. Một lần lỗi không xóa số đo: giữ report tốt cuối cùng (tối đa 60s)
+    //    và ghi rõ lý do lỗi + đếm số lần lỗi liên tiếp, thay vì trả report
+    //    trống với nhãn chế độ Phổ thông.
+    // d. Vòng đo chỉ probe VBUS 2s/lần (xem startTelemetryLoop): dumpsys là
+    //    lệnh nặng, giá trị đàm phán thay đổi chậm, không cần 1Hz.
+    // ========================================================================
+
+    private data class ShellExecResult(val output: String, val failure: String?)
+
+    private class ShizukuShellSession(private val process: Process) {
+        private val writer = process.outputStream.bufferedWriter()
+        private val lines = LinkedBlockingQueue<String>()
+        private var cmdSeq = 0L
+        private val lock = Any()
+
+        private val readerThread = Thread({
+            try {
+                process.inputStream.bufferedReader().forEachLine { lines.put(it) }
+            } catch (_: Throwable) {
+            }
+            lines.offer(EOF_MARKER)
+        }, "bpm-shizuku-shell-reader").apply { isDaemon = true }
+
+        private val stderrThread = Thread({
+            try {
+                process.errorStream.bufferedReader().forEachLine { }
+            } catch (_: Throwable) {
+            }
+        }, "bpm-shizuku-shell-stderr").apply { isDaemon = true }
+
+        init {
+            readerThread.start()
+            stderrThread.start()
+        }
+
+        val isAlive: Boolean
+            get() = try {
+                process.isAlive
+            } catch (_: Throwable) {
+                false
+            }
+
+        /** Chạy 1 lệnh trên shell đang mở, chờ tới marker (có nonce) hoặc hết timeout. */
+        fun run(script: String, timeoutMs: Long): ShellExecResult {
+            synchronized(lock) {
+                if (!isAlive) return ShellExecResult("", "SHELL_DEAD")
+                val nonce = ++cmdSeq
+                val marker = "__BPM_END_${nonce}__"
+                // Xóa output thừa (nếu có) của lệnh trước để không lẫn vào lần này.
+                lines.clear()
+                try {
+                    writer.write(script)
+                    writer.newLine()
+                    writer.write("echo $marker:\$?")
+                    writer.newLine()
+                    writer.flush()
+                } catch (_: Throwable) {
+                    return ShellExecResult("", "SHELL_DEAD")
+                }
+                val out = StringBuilder()
+                val deadlineMs = SystemClock.elapsedRealtime() + timeoutMs
+                while (true) {
+                    val remainingMs = deadlineMs - SystemClock.elapsedRealtime()
+                    if (remainingMs <= 0) return ShellExecResult(out.toString(), "TIMEOUT")
+                    val line = try {
+                        lines.poll(remainingMs, TimeUnit.MILLISECONDS)
+                    } catch (_: Throwable) {
+                        null
+                    } ?: return ShellExecResult(out.toString(), "TIMEOUT")
+                    if (line == EOF_MARKER) return ShellExecResult(out.toString(), "SHELL_EOF")
+                    if (line.startsWith(marker)) return ShellExecResult(out.toString().trim(), null)
+                    out.appendLine(line)
+                }
+            }
+        }
+
+        fun destroy() {
+            runCatching { writer.close() }
+            runCatching { process.destroy() }
+        }
+
+        companion object {
+            const val EOF_MARKER = "__BPM_SHELL_EOF__"
+        }
+    }
+
+    private var shizukuShell: ShizukuShellSession? = null
+    private var shizukuShellFailures = 0
+    private var nextShizukuRetryAtMs = 0L
+    private var lastGoodShizukuReport: SysfsProbeReport? = null
+    private var lastGoodShizukuAtMs = 0L
+    private var lastShizukuFailureReason: String = ""
+    private const val SHIZUKU_CMD_TIMEOUT_MS = 3000L
+    private const val SHIZUKU_MAX_BACKOFF_MS = 8000L
+    private const val SHIZUKU_STALE_MAX_AGE_MS = 60_000L
+
+    private fun openShizukuShell(): ShizukuShellSession? {
+        shizukuShell?.let { existing ->
+            if (existing.isAlive) return existing
+            existing.destroy()
+            shizukuShell = null
+        }
         return try {
             if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                return ""
+                return null
+            }
+            val method = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            method.isAccessible = true
+            val process = method.invoke(null, arrayOf("sh"), null, null) as Process
+            val session = ShizukuShellSession(process)
+            // Bắt tay: shell phải phản hồi thì mới đưa vào dùng.
+            val hello = session.run("echo BPM_SHELL_OK", 2000L)
+            if (hello.failure != null || !hello.output.contains("BPM_SHELL_OK")) {
+                session.destroy()
+                null
+            } else {
+                shizukuShell = session
+                session
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** Chạy lệnh qua shell thường trực; mở shell mới không được thì spawn 1 lần có timeout thật. */
+    private fun execShizukuCommand(cmd: String): ShellExecResult {
+        if (!Shizuku.pingBinder()) return ShellExecResult("", "BINDER_DEAD")
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+            return ShellExecResult("", "NO_PERMISSION")
+        }
+        val session = openShizukuShell()
+            ?: return execShizukuOneShot(cmd)
+        val result = session.run(cmd, SHIZUKU_CMD_TIMEOUT_MS)
+        if (result.failure != null) {
+            // Shell đã kẹt/chết: hủy hẳn để lần sau mở shell mới sạch,
+            // không để output tới muộn của lệnh cũ làm bẩn lần đọc sau.
+            session.destroy()
+            shizukuShell = null
+        }
+        return result
+    }
+
+    /** Dự phòng: spawn 1 lần nhưng có timeout THẬT + xả stderr + destroy khi quá hạn. */
+    private fun execShizukuOneShot(cmd: String): ShellExecResult {
+        return try {
+            if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                return ShellExecResult("", "NO_PERMISSION")
             }
             val method = Shizuku::class.java.getDeclaredMethod(
                 "newProcess",
@@ -256,12 +438,72 @@ object PrivilegedTelemetryEngine {
             )
             method.isAccessible = true
             val process = method.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            process.waitFor(1500, TimeUnit.MILLISECONDS)
-            output.trim()
+            val out = StringBuilder()
+            val readerThread = Thread({
+                try {
+                    process.inputStream.bufferedReader().forEachLine { out.appendLine(it) }
+                } catch (_: Throwable) {
+                }
+            }, "bpm-shizuku-oneshot-reader").apply { isDaemon = true }
+            val stderrThread = Thread({
+                try {
+                    process.errorStream.bufferedReader().forEachLine { }
+                } catch (_: Throwable) {
+                }
+            }, "bpm-shizuku-oneshot-stderr").apply { isDaemon = true }
+            readerThread.start()
+            stderrThread.start()
+            val finished = process.waitFor(SHIZUKU_CMD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            if (!finished) {
+                process.destroy()
+                runCatching { readerThread.join(300) }
+                return ShellExecResult("", "TIMEOUT")
+            }
+            runCatching { readerThread.join(500) }
+            val text = out.toString().trim()
+            if (text.isEmpty()) ShellExecResult("", "EMPTY_OUTPUT") else ShellExecResult(text, null)
         } catch (_: Throwable) {
-            ""
+            ShellExecResult("", "SPAWN_FAILED")
         }
+    }
+
+    private fun describeShellFailure(failure: String?): String = when (failure) {
+        "TIMEOUT" -> "shell không phản hồi sau ${SHIZUKU_CMD_TIMEOUT_MS / 1000}s (dumpsys/Shizuku kẹt) — đã hủy shell cũ, sẽ mở shell mới"
+        "SHELL_EOF" -> "tiến trình shell đã chết (đầu đọc đóng)"
+        "SHELL_DEAD" -> "shell không còn sống"
+        "BINDER_DEAD" -> "Shizuku binder không phản hồi (app Shizuku đã dừng?)"
+        "NO_PERMISSION" -> "chưa cấp quyền Shizuku cho app"
+        "SPAWN_FAILED" -> "không tạo được tiến trình shell mới qua Shizuku"
+        "EMPTY_OUTPUT" -> "shell chạy xong nhưng không trả output"
+        else -> "không rõ ($failure)"
+    }
+
+    /**
+     * Report khi shell lỗi: giữ số đo tốt cuối cùng (tối đa 60s) kèm ghi chú rõ
+     * ràng, thay vì trả report trống mang nhãn mặc định của chế độ Phổ thông.
+     */
+    private fun shizukuStaleReport(note: String): SysfsProbeReport {
+        val last = lastGoodShizukuReport
+        val now = SystemClock.elapsedRealtime()
+        if (last != null && now - lastGoodShizukuAtMs <= SHIZUKU_STALE_MAX_AGE_MS) {
+            val ageSec = (now - lastGoodShizukuAtMs) / 1000
+            val vbusTxt = last.vbusVoltageV?.let { String.format("%.2fV", it) } ?: "N/A"
+            val ibusTxt = last.ibusCurrentA?.let { String.format("%.2fA", it) } ?: "N/A"
+            return last.copy(
+                privilegeStatusText = "Shizuku: $note — đang giữ số đo cuối từ ${ageSec}s trước ($vbusTxt × $ibusTxt), sẽ thử lại",
+                extraDeveloperMetrics = last.extraDeveloperMetrics +
+                    " | Lỗi shell: $lastShizukuFailureReason • Lỗi liên tiếp: $shizukuShellFailures"
+            )
+        }
+        return SysfsProbeReport(
+            activeMode = AppPrivilegeMode.ADB_SHIZUKU,
+            privilegeStatusText = "Shizuku: $note",
+            isPrivilegeGranted = true,
+            vbusSourcePath = "Đang thử kết nối lại Shizuku Shell…",
+            ibusSourcePath = "Đang thử kết nối lại Shizuku Shell…",
+            kernelProtocolPath = "Đang thử kết nối lại Shizuku Shell…",
+            extraDeveloperMetrics = "Lỗi shell: $lastShizukuFailureReason • Hướng dẫn: Cài đặt ứng dụng Shizuku, kích hoạt qua Wireless Debugging và bấm nút 'Cấp quyền Shizuku'."
+        )
     }
 
     private fun execRootCommand(cmd: String): Pair<Boolean, String> {
@@ -332,15 +574,19 @@ object PrivilegedTelemetryEngine {
     private fun probeShizukuAdbMode(): SysfsProbeReport {
         val (ok, statusMsg) = checkShizukuStatus()
         if (!ok) {
-            return SysfsProbeReport(
-                activeMode = AppPrivilegeMode.ADB_SHIZUKU,
-                privilegeStatusText = statusMsg,
-                isPrivilegeGranted = false,
-                vbusSourcePath = "Chờ kết nối và cấp quyền Shizuku...",
-                ibusSourcePath = "Chờ kết nối và cấp quyền Shizuku...",
-                kernelProtocolPath = "Chờ kết nối và cấp quyền Shizuku...",
-                extraDeveloperMetrics = "Hướng dẫn: Cài đặt ứng dụng Shizuku, kích hoạt qua Wireless Debugging và bấm nút 'Cấp quyền Shizuku'."
-            )
+            // v3.5: Shizuku chưa sẵn sàng cũng không xóa số đo cuối — trả report
+            // giữ số đo (nếu có) kèm lý do, thay vì report trống mang nhãn
+            // mặc định của chế độ Phổ thông.
+            lastShizukuFailureReason = statusMsg
+            return shizukuStaleReport(statusMsg)
+        }
+
+        // Backoff: shell vừa lỗi thì đừng spawn dồn dập — giữ số đo cuối và
+        // chờ tới lượt thử lại.
+        val nowMs = SystemClock.elapsedRealtime()
+        if (nowMs < nextShizukuRetryAtMs) {
+            val waitSec = (nextShizukuRetryAtMs - nowMs + 999) / 1000
+            return shizukuStaleReport("shell vừa lỗi, thử lại sau ${waitSec}s")
         }
 
         val script = """
@@ -357,13 +603,19 @@ object PrivilegedTelemetryEngine {
             done
         """.trimIndent()
 
-        val rawOut = execShizukuCommand(script)
-        if (rawOut.isEmpty()) {
-            return SysfsProbeReport(
-                activeMode = AppPrivilegeMode.ADB_SHIZUKU,
-                privilegeStatusText = "$statusMsg (Không nhận được phản hồi từ tiến trình shell)",
-                isPrivilegeGranted = true
+        val execResult = execShizukuCommand(script)
+        val rawOut = execResult.output
+        if (execResult.failure != null || rawOut.isEmpty()) {
+            // v3.5: một lần đọc lỗi KHÔNG xóa số đo. Ghi rõ lý do, tăng backoff
+            // (2s -> 4s -> 8s) rồi trả số đo cuối kèm ghi chú.
+            shizukuShellFailures++
+            lastShizukuFailureReason = describeShellFailure(execResult.failure)
+            val backoffMs = minOf(
+                SHIZUKU_MAX_BACKOFF_MS,
+                1000L * (1L shl minOf(shizukuShellFailures, 3))
             )
+            nextShizukuRetryAtMs = SystemClock.elapsedRealtime() + backoffMs
+            return shizukuStaleReport("$statusMsg (${lastShizukuFailureReason})")
         }
 
         var maxChargingMicroVolt: Float? = null
@@ -450,7 +702,7 @@ object PrivilegedTelemetryEngine {
         }
 
         val protoJoined = protoList.joinToString(" | ")
-        return SysfsProbeReport(
+        val report = SysfsProbeReport(
             activeMode = AppPrivilegeMode.ADB_SHIZUKU,
             privilegeStatusText = statusMsg,
             isPrivilegeGranted = true,
@@ -462,8 +714,17 @@ object PrivilegedTelemetryEngine {
             kernelProtocolPath = if (protoPath.isNotEmpty()) protoPath else "SELinux chặn usb_type đối với UID 2000",
             extraDeveloperMetrics = devExtra,
             isVbusMeasured = (negotiatedVbus != null && negotiatedVbus >= 3.5f),
-            isKernelProtocolVerified = protoJoined.isNotEmpty()
+            isKernelProtocolVerified = protoJoined.isNotEmpty(),
+            // v3.5: IBUS từ dumpsys "Max charging current" là giới hạn đàm phán,
+            // không phải dòng thực tế — UI phải ghi rõ để khỏi hiểu nhầm là đo thực.
+            isIbusFromNegotiatedCap = (sysIbus == null && negotiatedIbus != null)
         )
+        // v3.5: đọc thành công thì reset lỗi/backoff và lưu làm "số đo cuối".
+        shizukuShellFailures = 0
+        nextShizukuRetryAtMs = 0L
+        lastGoodShizukuReport = report
+        lastGoodShizukuAtMs = SystemClock.elapsedRealtime()
+        return report
     }
 
     private fun probeRootMode(): SysfsProbeReport {
@@ -1162,7 +1423,13 @@ object ChargerCatalogRepository {
         val sys = telemetry.sysfsReport
         val pUsed = telemetry.vbusInputPowerW ?: telemetry.effectiveBatPowerW
         val powerSourceStr = if (telemetry.vbusInputPowerW != null) {
-            "Đo từ VBUS×IBUS (${String.format("%.2fW", pUsed)}) [${sys.activeMode.shortTitle}]"
+            if (sys.isIbusFromNegotiatedCap) {
+                // v3.5: IBUS là "Max charging current" từ dumpsys — giới hạn đàm phán,
+                // không phải dòng thực tế tức thời, nên P_vbus ở đây là giới hạn trên.
+                "Giới hạn đàm phán VBUS×IBUS (≤ ${String.format("%.2fW", pUsed)}) [${sys.activeMode.shortTitle}] — IBUS là Max charging current, không phải dòng thực tế"
+            } else {
+                "Đo từ VBUS×IBUS (${String.format("%.2fW", pUsed)}) [${sys.activeMode.shortTitle}]"
+            }
         } else {
             "Ước tính từ phía cell pin P_bat (${String.format("%.2fW", pUsed)}) [${sys.activeMode.shortTitle}]"
         }
@@ -1648,6 +1915,9 @@ class ChargingMonitorService : Service() {
         monitorJob?.cancel()
         monitorJob = serviceScope.launch {
             var tickCount = 0
+            // v3.5: cache report Shizuku để probe VBUS tối đa 2s/lần (xem dưới).
+            var cachedSysReport: SysfsProbeReport? = null
+            var cachedMode: AppPrivilegeMode? = null
             while (isActive) {
                 val rawCurrent = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
                 val currentMa = if (abs(rawCurrent) > 50_000) rawCurrent / 1000f else rawCurrent.toFloat()
@@ -1657,7 +1927,21 @@ class ChargingMonitorService : Service() {
                 val batPowerW = latestBatVolt * currentAmp * cells
 
                 val currentMode = TelemetryRepository.privilegeMode.value
-                val sysReport = PrivilegedTelemetryEngine.probeByMode(currentMode)
+                // v3.5: VBUS/negotiated chỉ thay đổi khi củ sạc đàm phán lại, còn
+                // dumpsys là lệnh nặng và spawn shell 1Hz là 1 phần nguyên nhân
+                // gây ngắt Shizuku — nên ở chế độ Shizuku chỉ probe 2s/lần,
+                // nhịp lẻ dùng lại report vừa đo. P_bat (qua BatteryManager)
+                // vẫn đo mỗi 1s. Đổi chế độ thì probe lại ngay.
+                val sysReport = if (currentMode == AppPrivilegeMode.ADB_SHIZUKU &&
+                    cachedSysReport != null && cachedMode == currentMode && tickCount % 2 == 1
+                ) {
+                    cachedSysReport!!
+                } else {
+                    PrivilegedTelemetryEngine.probeByMode(currentMode).also {
+                        cachedSysReport = it
+                        cachedMode = currentMode
+                    }
+                }
 
                 val vbusPowerW = if (sysReport.vbusVoltageV != null && sysReport.ibusCurrentA != null) {
                     sysReport.vbusVoltageV * sysReport.ibusCurrentA
@@ -1730,7 +2014,7 @@ class ChargingMonitorService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("Battery Power Monitor v3.4 (Light Theme, bố cục V2)")
+            .setContentTitle("Battery Power Monitor v3.5 (Shizuku ổn định, bố cục V2)")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -2281,7 +2565,8 @@ fun RealtimeDashboardTab(
                             if (telemetry.vbusInputPowerW != null) {
                                 Text(
                                     text = "✓ Công suất cổng sạc VBUS (${privilegeMode.shortTitle}): ${String.format("%.2f W", telemetry.vbusInputPowerW)} " +
-                                            "(${String.format("%.2fV", telemetry.sysfsReport.vbusVoltageV)} × ${String.format("%.2fA", telemetry.sysfsReport.ibusCurrentA)})",
+                                            "(${String.format("%.2fV", telemetry.sysfsReport.vbusVoltageV)} × ${String.format("%.2fA", telemetry.sysfsReport.ibusCurrentA)})" +
+                                            if (telemetry.sysfsReport.isIbusFromNegotiatedCap) " (giới hạn đàm phán)" else "",
                                     color = Color(0xFF16A34A),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -2291,7 +2576,7 @@ fun RealtimeDashboardTab(
                                     AppPrivilegeMode.NORMAL_USER ->
                                         "ℹ️ Bạn đang ở Chế độ 1 (Phổ thông): Ứng dụng chỉ tính công suất từ phía cell pin (luôn thấp hơn công suất đầu ra củ sạc khoảng 10–20% do hao phí mạch sạc). Hãy chọn Chế độ 2 (Shizuku) hoặc Chế độ 3 (Root) để đọc VBUS."
                                     AppPrivilegeMode.ADB_SHIZUKU ->
-                                        "ℹ️ Chế độ 2 (ADB Shizuku): Chưa lấy được VBUS/IBUS (Hãy bật Shizuku hoặc cắm sạc để đọc Max Charging Voltage/Current từ dumpsys)."
+                                        "ℹ️ Chế độ 2 (ADB Shizuku): Chưa lấy được VBUS/IBUS (Hãy bật Shizuku hoặc cắm sạc để đọc Max Charging Voltage/Current từ dumpsys). Mẹo: trong app Shizuku, tắt 'Auto-disable USB debugging' để Shizuku tự khởi động lại được khi dừng; giữ Wi-Fi ổn định."
                                     AppPrivilegeMode.ROOT_FULL ->
                                         "ℹ️ Chế độ 3 (Root): Thiết bị chưa cấp quyền su hoặc mạch PMIC không xuất thông số IBUS."
                                 }
