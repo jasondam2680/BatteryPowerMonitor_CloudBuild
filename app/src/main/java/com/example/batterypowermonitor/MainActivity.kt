@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -71,6 +72,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuProvider
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -141,7 +143,12 @@ data class SysfsProbeReport(
     // "Max charging current" — đó là GIỚI HẠN đàm phán, không phải dòng thực tế
     // tức thời (bằng chứng: P_bat 2,61W từng lớn hơn P_vbus 2,31W, điều không
     // thể xảy ra nếu cả hai đều là công suất thực).
-    val isIbusFromNegotiatedCap: Boolean = false
+    val isIbusFromNegotiatedCap: Boolean = false,
+    // v3.6: trạng thái Shizuku lúc probe (null = không áp dụng, vd. chế độ Phổ thông/Root).
+    val shizukuState: ShizukuState? = null,
+    // v3.6: package hiện tại của app Shizuku (kể cả khi đã hide/đổi tên) — UI dùng
+    // để hiện nút "Mở Shizuku".
+    val shizukuManagerPackage: String? = null
 )
 
 data class BatteryTelemetry(
@@ -220,25 +227,96 @@ data class ProtocolDetectionResult(
     val verificationBadge: String
 )
 
+// Đoạn mã do anh Jason cung cấp (09/11) — kiểm tra Shizuku đã cài đặt bằng cách
+// tra cứu quyền API_V23 trong PackageManager. Cách này vẫn work khi Shizuku bị
+// hide: tính năng Hide đổi tên package (vd. moe.shizuku.privileged.api.x7k9p)
+// nên mọi cách kiểm tra dựa trên tên package gốc đều báo "không cài đặt"; còn
+// bảng đăng ký quyền thì vẫn biết package nào đã khai báo quyền này, dù tên
+// package đã đổi. (ShizukuProvider.PERMISSION = "moe.shizuku.manager.permission.API_V23".)
+private fun Context.shizukuPermission() =
+    runCatching {
+        packageManager.getPermissionInfo(ShizukuProvider.PERMISSION, 0)
+    }.getOrNull()
+
+fun Context.isShizukuInstalled() =
+    shizukuPermission() != null
+
+fun Context.getShizukuPackageName() =
+    shizukuPermission()?.packageName
+
+/** Trạng thái Shizuku (v3.6): phân biệt "chưa cài" với "đã cài nhưng server chưa chạy". */
+enum class ShizukuState { READY, NOT_INSTALLED, INSTALLED_NOT_RUNNING, NO_PERMISSION }
+
+data class ShizukuStatus(
+    val state: ShizukuState,
+    val message: String,
+    val managerPackage: String? = null
+)
+
 // ============================================================================
 // 3. BỘ THỰC THI ĐA CHẾ ĐỘ: NORMAL API vs ADB (SHIZUKU) vs ROOT (SU)
 // ============================================================================
 
 object PrivilegedTelemetryEngine {
 
-    fun checkShizukuStatus(): Pair<Boolean, String> {
+    fun checkShizukuStatus(context: Context): ShizukuStatus {
         return try {
             if (!Shizuku.pingBinder()) {
-                false to "Shizuku chưa chạy (Hãy mở app Shizuku và bật Wireless Debugging / ADB)"
+                // Binder chưa có: pingBinder() không phân biệt được "chưa cài"
+                // với "đã cài nhưng server chưa chạy" nên trước đây đều báo chung
+                // một câu "Shizuku chưa chạy". Dùng cách tra cứu của anh Jason
+                // (quyền API_V23) để tìm package Shizuku hiện tại — kể cả khi
+                // đã hide/đổi tên package — rồi phân biệt hai trường hợp.
+                val managerPkg = context.getShizukuPackageName()
+                if (managerPkg != null) {
+                    ShizukuStatus(
+                        ShizukuState.INSTALLED_NOT_RUNNING,
+                        "Shizuku đã cài đặt (đang ẩn, gói $managerPkg) nhưng server chưa chạy — bấm 'Mở Shizuku' bên dưới để khởi động lại, không cần un-hide",
+                        managerPkg
+                    )
+                } else {
+                    ShizukuStatus(
+                        ShizukuState.NOT_INSTALLED,
+                        "Chưa cài đặt Shizuku (Hãy cài app Shizuku rồi bật Wireless Debugging / ADB)"
+                    )
+                }
             } else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                false to "Chưa cấp quyền Shizuku (Hãy bấm nút 'Cấp quyền Shizuku' bên dưới)"
+                ShizukuStatus(
+                    ShizukuState.NO_PERMISSION,
+                    "Chưa cấp quyền Shizuku (Hãy bấm nút 'Cấp quyền Shizuku' bên dưới)"
+                )
             } else {
                 val uid = Shizuku.getUid()
                 val role = if (uid == 0) "Root-backed Shizuku (UID 0)" else "ADB Shell (UID $uid)"
-                true to "Đã kết nối Shizuku: $role"
+                ShizukuStatus(ShizukuState.READY, "Đã kết nối Shizuku: $role")
             }
         } catch (e: Throwable) {
-            false to "Shizuku chưa sẵn sàng: ${e.javaClass.simpleName}"
+            ShizukuStatus(ShizukuState.NOT_INSTALLED, "Shizuku chưa sẵn sàng: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Mở app Shizuku đang ẩn bằng explicit intent theo đúng package hiện tại
+     * (đã hide/đổi tên nên không có icon launcher để bấm). Nếu không có launch
+     * intent thì fallback sang trang App info trong Cài đặt. Trả về false khi
+     * cả hai đều không mở được (vd. package bị disable ở mức hệ thống). */
+    fun openShizukuApp(context: Context): Boolean {
+        return try {
+            val pkg = context.getShizukuPackageName() ?: return false
+            val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launch)
+                true
+            } else {
+                val settings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$pkg")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settings)
+                true
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
@@ -482,7 +560,7 @@ object PrivilegedTelemetryEngine {
      * Report khi shell lỗi: giữ số đo tốt cuối cùng (tối đa 60s) kèm ghi chú rõ
      * ràng, thay vì trả report trống mang nhãn mặc định của chế độ Phổ thông.
      */
-    private fun shizukuStaleReport(note: String): SysfsProbeReport {
+    private fun shizukuStaleReport(note: String, state: ShizukuState, managerPackage: String? = null): SysfsProbeReport {
         val last = lastGoodShizukuReport
         val now = SystemClock.elapsedRealtime()
         if (last != null && now - lastGoodShizukuAtMs <= SHIZUKU_STALE_MAX_AGE_MS) {
@@ -491,6 +569,11 @@ object PrivilegedTelemetryEngine {
             val ibusTxt = last.ibusCurrentA?.let { String.format("%.2fA", it) } ?: "N/A"
             return last.copy(
                 privilegeStatusText = "Shizuku: $note — đang giữ số đo cuối từ ${ageSec}s trước ($vbusTxt × $ibusTxt), sẽ thử lại",
+                // v3.6: đang giữ số đo cũ, không phải đang đo trực tiếp — không còn
+                // "granted" nữa để UI hiện màu vàng + đúng nút hành động.
+                isPrivilegeGranted = false,
+                shizukuState = state,
+                shizukuManagerPackage = managerPackage ?: last.shizukuManagerPackage,
                 extraDeveloperMetrics = last.extraDeveloperMetrics +
                     " | Lỗi shell: $lastShizukuFailureReason • Lỗi liên tiếp: $shizukuShellFailures"
             )
@@ -498,11 +581,17 @@ object PrivilegedTelemetryEngine {
         return SysfsProbeReport(
             activeMode = AppPrivilegeMode.ADB_SHIZUKU,
             privilegeStatusText = "Shizuku: $note",
-            isPrivilegeGranted = true,
+            isPrivilegeGranted = false,
+            shizukuState = state,
+            shizukuManagerPackage = managerPackage,
             vbusSourcePath = "Đang thử kết nối lại Shizuku Shell…",
             ibusSourcePath = "Đang thử kết nối lại Shizuku Shell…",
             kernelProtocolPath = "Đang thử kết nối lại Shizuku Shell…",
-            extraDeveloperMetrics = "Lỗi shell: $lastShizukuFailureReason • Hướng dẫn: Cài đặt ứng dụng Shizuku, kích hoạt qua Wireless Debugging và bấm nút 'Cấp quyền Shizuku'."
+            extraDeveloperMetrics = if (state == ShizukuState.NOT_INSTALLED) {
+                "Trạng thái Shizuku: $lastShizukuFailureReason • Hướng dẫn: Cài đặt ứng dụng Shizuku, kích hoạt qua Wireless Debugging và bấm nút 'Cấp quyền Shizuku'."
+            } else {
+                "Trạng thái Shizuku: $lastShizukuFailureReason"
+            }
         )
     }
 
@@ -546,10 +635,10 @@ object PrivilegedTelemetryEngine {
         }
     }
 
-    fun probeByMode(mode: AppPrivilegeMode): SysfsProbeReport {
+    fun probeByMode(mode: AppPrivilegeMode, context: Context): SysfsProbeReport {
         return when (mode) {
             AppPrivilegeMode.NORMAL_USER -> probeNormalMode()
-            AppPrivilegeMode.ADB_SHIZUKU -> probeShizukuAdbMode()
+            AppPrivilegeMode.ADB_SHIZUKU -> probeShizukuAdbMode(context)
             AppPrivilegeMode.ROOT_FULL -> probeRootMode()
         }
     }
@@ -571,22 +660,27 @@ object PrivilegedTelemetryEngine {
         )
     }
 
-    private fun probeShizukuAdbMode(): SysfsProbeReport {
-        val (ok, statusMsg) = checkShizukuStatus()
-        if (!ok) {
+    private fun probeShizukuAdbMode(context: Context): SysfsProbeReport {
+        val status = checkShizukuStatus(context)
+        if (status.state != ShizukuState.READY) {
             // v3.5: Shizuku chưa sẵn sàng cũng không xóa số đo cuối — trả report
             // giữ số đo (nếu có) kèm lý do, thay vì report trống mang nhãn
             // mặc định của chế độ Phổ thông.
-            lastShizukuFailureReason = statusMsg
-            return shizukuStaleReport(statusMsg)
+            // v3.6: server đã chết thì shell thường trực cũng chết theo — hủy hẳn
+            // để lần sau mở shell mới sạch, thay vì giữ xác session cũ.
+            shizukuShell?.destroy()
+            shizukuShell = null
+            lastShizukuFailureReason = status.message
+            return shizukuStaleReport(status.message, status.state, status.managerPackage)
         }
+        val statusMsg = status.message
 
         // Backoff: shell vừa lỗi thì đừng spawn dồn dập — giữ số đo cuối và
         // chờ tới lượt thử lại.
         val nowMs = SystemClock.elapsedRealtime()
         if (nowMs < nextShizukuRetryAtMs) {
             val waitSec = (nextShizukuRetryAtMs - nowMs + 999) / 1000
-            return shizukuStaleReport("shell vừa lỗi, thử lại sau ${waitSec}s")
+            return shizukuStaleReport("shell vừa lỗi, thử lại sau ${waitSec}s", ShizukuState.READY)
         }
 
         val script = """
@@ -615,7 +709,7 @@ object PrivilegedTelemetryEngine {
                 1000L * (1L shl minOf(shizukuShellFailures, 3))
             )
             nextShizukuRetryAtMs = SystemClock.elapsedRealtime() + backoffMs
-            return shizukuStaleReport("$statusMsg (${lastShizukuFailureReason})")
+            return shizukuStaleReport("$statusMsg (${lastShizukuFailureReason})", ShizukuState.READY)
         }
 
         var maxChargingMicroVolt: Float? = null
@@ -715,6 +809,7 @@ object PrivilegedTelemetryEngine {
             extraDeveloperMetrics = devExtra,
             isVbusMeasured = (negotiatedVbus != null && negotiatedVbus >= 3.5f),
             isKernelProtocolVerified = protoJoined.isNotEmpty(),
+            shizukuState = ShizukuState.READY,
             // v3.5: IBUS từ dumpsys "Max charging current" là giới hạn đàm phán,
             // không phải dòng thực tế — UI phải ghi rõ để khỏi hiểu nhầm là đo thực.
             isIbusFromNegotiatedCap = (sysIbus == null && negotiatedIbus != null)
@@ -1937,7 +2032,7 @@ class ChargingMonitorService : Service() {
                 ) {
                     cachedSysReport!!
                 } else {
-                    PrivilegedTelemetryEngine.probeByMode(currentMode).also {
+                    PrivilegedTelemetryEngine.probeByMode(currentMode, applicationContext).also {
                         cachedSysReport = it
                         cachedMode = currentMode
                     }
@@ -2014,7 +2109,7 @@ class ChargingMonitorService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("Battery Power Monitor v3.5 (Shizuku ổn định, bố cục V2)")
+            .setContentTitle("Battery Power Monitor v3.6 (Shizuku ẩn, bố cục V2)")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -2484,21 +2579,43 @@ fun RealtimeDashboardTab(
                                 )
                             }
 
-                            if (privilegeMode == AppPrivilegeMode.ADB_SHIZUKU && !telemetry.sysfsReport.isPrivilegeGranted) {
+                            // v3.6: nút theo đúng trạng thái Shizuku — "Mở Shizuku" chỉ hiện
+                            // khi đã cài nhưng server chưa chạy (kể cả khi app Shizuku đang
+                            // ẩn/đổi tên package, vì mở bằng explicit intent theo package
+                            // tìm được qua quyền API_V23, không cần icon launcher).
+                            val szState = telemetry.sysfsReport.shizukuState
+                            val szPkg = telemetry.sysfsReport.shizukuManagerPackage
+                            if (privilegeMode == AppPrivilegeMode.ADB_SHIZUKU && szState != null && szState != ShizukuState.READY) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    AquaSegmentButton(
-                                        text = "Cấp quyền Shizuku",
-                                        isSelected = true,
-                                        accentColor = Color(0xFF0284C7),
-                                        onClick = { PrivilegedTelemetryEngine.requestShizukuPermission() }
-                                    )
-                                    AquaSegmentButton(
-                                        text = "Tải Shizuku ↗",
-                                        isSelected = false,
-                                        accentColor = Color(0xFF0284C7),
-                                        onClick = { openExternalUrl(context, "https://shizuku.rikka.app/download/") }
-                                    )
+                                    if (szPkg != null) {
+                                        AquaSegmentButton(
+                                            text = "Mở Shizuku",
+                                            isSelected = true,
+                                            accentColor = Color(0xFF0284C7),
+                                            onClick = {
+                                                if (!PrivilegedTelemetryEngine.openShizukuApp(context)) {
+                                                    openExternalUrl(context, "https://shizuku.rikka.app/download/")
+                                                }
+                                            }
+                                        )
+                                    }
+                                    if (szState == ShizukuState.NO_PERMISSION) {
+                                        AquaSegmentButton(
+                                            text = "Cấp quyền Shizuku",
+                                            isSelected = true,
+                                            accentColor = Color(0xFF0284C7),
+                                            onClick = { PrivilegedTelemetryEngine.requestShizukuPermission() }
+                                        )
+                                    }
+                                    if (szState == ShizukuState.NOT_INSTALLED) {
+                                        AquaSegmentButton(
+                                            text = "Tải Shizuku ↗",
+                                            isSelected = false,
+                                            accentColor = Color(0xFF0284C7),
+                                            onClick = { openExternalUrl(context, "https://shizuku.rikka.app/download/") }
+                                        )
+                                    }
                                 }
                             }
                         }

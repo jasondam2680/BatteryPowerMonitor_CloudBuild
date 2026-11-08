@@ -1,4 +1,17 @@
-# Battery Power Monitor v3.5 (Shizuku ổn định, bố cục V2)
+# Battery Power Monitor v3.6 (Shizuku ẩn, bố cục V2)
+
+## Có gì mới ở v3.6 (sửa lỗi "Shizuku chưa chạy" khi Shizuku đang ẩn, theo báo cáo ngày 09/11)
+
+**Vấn đề:** anh Jason đã hide Shizuku (tính năng Hide đổi tên package, vd. `moe.shizuku.privileged.api` → `...api.x7k9p`, để app ngân hàng không phát hiện) và không muốn un-hide. App vẫn báo "Shizuku chưa chạy" và đòi mở app Shizuku — mà icon launcher đã mất nên không mở được.
+
+**Nguyên nhân:** `Shizuku.pingBinder()` chỉ trả về true/false, không phân biệt được "chưa cài" với "đã cài nhưng server chưa chạy". Mọi cách kiểm tra dựa trên tên package gốc đều mù khi package đã đổi tên.
+
+**Cách sửa (dùng đoạn mã anh Jason cung cấp):** tra cứu quyền `moe.shizuku.manager.permission.API_V23` trong PackageManager (`getPermissionInfo`) để tìm package Shizuku hiện tại — bảng đăng ký quyền vẫn biết package nào khai báo quyền này dù tên đã đổi. Từ đó app phân biệt 4 trạng thái: chưa cài / đã cài nhưng server chưa chạy / chưa cấp quyền / sẵn sàng.
+- **Nút "Mở Shizuku" mới:** hiện khi đã cài nhưng server chưa chạy — mở app Shizuku bằng explicit intent theo đúng package hiện tại (không cần icon launcher, không cần un-hide); nếu không có launch intent thì fallback sang trang App info trong Cài đặt.
+- Khi server đã chết thì shell thường trực của v3.5 cũng được hủy hẳn để lần sau mở shell mới sạch.
+- Report lỗi lúc Shizuku chưa sẵn sàng giờ mang `isPrivilegeGranted = false` (trước đây v3.5 để true) nên trạng thái hiện màu vàng và đúng nút hành động, thay vì xanh như đang đo tốt.
+
+**Giới hạn cần biết:** đoạn tra cứu chỉ giúp *tìm* Shizuku đang ẩn và *mở* nó để khởi động lại server — server vẫn phải chạy thì app mới đo được VBUS. Nếu bấm "Mở Shizuku" mà không mở được gì (package bị disable ở mức hệ thống, khác với kiểu hide đổi tên), app sẽ mở trang tải Shizuku; lúc đó anh báo lại giúp Bé xem anh hide bằng cách nào.
 
 ## Có gì mới ở v3.5 (sửa lỗi ngắt Shizuku liên tục, theo ảnh anh Jason gửi 08/11)
 
