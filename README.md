@@ -1,4 +1,19 @@
-# Battery Power Monitor v3.6 (Shizuku ẩn, bố cục V2)
+# Battery Power Monitor v3.7 (1S tự nhận diện, CSV thêm áp đàm phán)
+
+## Có gì mới ở v3.7 (sửa P_bat nhân đôi + ghi áp đàm phán vào CSV, theo log sạc ngày 10/11)
+
+**Vấn đề:** log sạc PD 49 phút (23% → 54%) cho thấy P_bat trung bình 21,6W trong khi P_Vbus chỉ 13,1W — công suất ra khỏi pin không thể lớn hơn công suất vào từ củ sạc.
+
+**Nguyên nhân:**
+- App đang để 2S nên `P_bat = V_bat × I_bat × 2`, nhưng Nothing Phone (2a) Plus là pin 1S: V_bat đọc được 3,70–4,10V là dải điện áp của 1 cell (pin 2S sẽ báo ~7,4–8,8V). Tính đúng (1S) thì P_bat ~10,8W < 13,1W — hợp lý.
+- I_Bus kẹt cứng 2,975A ở 99,9% số mẫu — đó là giới hạn dòng đàm phán, không phải dòng đo thực.
+- V_Bus sysfs chỉ ~4,4V (bám V_bat +0,39V, là node hạ áp sau củ sạc) nên không phân biệt được củ sạc đàm phán 5V hay 9V PDO — log cũ không ghi áp đàm phán.
+- Sạc chậm (0,63%/phút so với ~2,2%/phút ở 45W) là thật: củ sạc chỉ đàm phán PD 5V/3A ~13–15W. Nhiệt độ 30–34,7°C nên không phải do nóng mà bóp dòng.
+
+**Cách sửa:**
+- **Tự nhận diện số cell theo V_bat:** V_bat < 5V → 1S; ≥ 5V → 2S. Chạm tay chọn 1S/2S thì lựa chọn đó thắng trong phiên (không bị auto-detect ghi đè). Ghi chú auto-detect hiển thị dưới nút chọn.
+- **CSV thêm 2 cột cuối `Ap_Dam_Phan(V)`, `Dong_Dam_Phan(A)`** — lấy từ dumpsys "Max charging voltage/current" (cả chế độ Root lẫn Shizuku). Lần sau nhìn log là biết ngay củ sạc đàm phán 5V hay 9V.
+- I_Bat tích phân cao hơn mức pin ~42% (2.196 mAh so với 1.550 mAh) — khả năng do máy đang dùng lúc test (dòng sạc tổng gồm cả tải hệ thống); chưa sửa trong bản này, cần test lại màn hình tắt để khẳng định.
 
 ## Có gì mới ở v3.6 (sửa lỗi "Shizuku chưa chạy" khi Shizuku đang ẩn, theo báo cáo ngày 09/11)
 

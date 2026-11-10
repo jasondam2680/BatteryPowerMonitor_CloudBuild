@@ -148,7 +148,13 @@ data class SysfsProbeReport(
     val shizukuState: ShizukuState? = null,
     // v3.6: package hiện tại của app Shizuku (kể cả khi đã hide/đổi tên) — UI dùng
     // để hiện nút "Mở Shizuku".
-    val shizukuManagerPackage: String? = null
+    val shizukuManagerPackage: String? = null,
+    // v3.7: Áp/dòng đàm phán từ dumpsys "Max charging voltage/current"
+    // (giới hạn thương lượng với củ sạc, KHÔNG phải giá trị đo thực) — ghi
+    // vào CSV để lần sau biết ngay củ sạc đàm phán 5V hay 9V (bằng chứng
+    // 10/11: V_Bus sysfs chỉ ~4,4V, không phân biệt được 5V/9V PDO).
+    val negotiatedVbusV: Float? = null,
+    val negotiatedIbusA: Float? = null
 )
 
 data class BatteryTelemetry(
@@ -812,7 +818,10 @@ object PrivilegedTelemetryEngine {
             shizukuState = ShizukuState.READY,
             // v3.5: IBUS từ dumpsys "Max charging current" là giới hạn đàm phán,
             // không phải dòng thực tế — UI phải ghi rõ để khỏi hiểu nhầm là đo thực.
-            isIbusFromNegotiatedCap = (sysIbus == null && negotiatedIbus != null)
+            isIbusFromNegotiatedCap = (sysIbus == null && negotiatedIbus != null),
+            // v3.7: ghi riêng áp/dòng đàm phán để đưa vào CSV.
+            negotiatedVbusV = normalizeUnitToVolt(maxChargingMicroVolt),
+            negotiatedIbusA = normalizeUnitToAmp(maxChargingMicroAmp)
         )
         // v3.5: đọc thành công thì reset lỗi/backoff và lưu làm "số đo cuối".
         shizukuShellFailures = 0
@@ -842,6 +851,8 @@ object PrivilegedTelemetryEngine {
             for p in /sys/class/power_supply/battery/charge_full_design /sys/class/power_supply/bms/charge_full_design; do
               if [ -f "${'$'}p" ]; then echo "DESIGN:${'$'}(cat ${'$'}p 2>/dev/null)"; break; fi
             done
+            v=${'$'}(dumpsys battery 2>/dev/null | grep "Max charging voltage" | cut -d: -f2 | tr -d ' '); [ -n "${'$'}v" ] && echo "NEGV:${'$'}v"
+            i=${'$'}(dumpsys battery 2>/dev/null | grep "Max charging current" | cut -d: -f2 | tr -d ' '); [ -n "${'$'}i" ] && echo "NEGI:${'$'}i"
         """.trimIndent()
 
         val (rootOk, out) = execRootCommand(script)
@@ -861,6 +872,9 @@ object PrivilegedTelemetryEngine {
         var vbusPath = "Không tìm thấy node VBUS trên phần cứng này"
         var ibusA: Float? = null
         var ibusPath = "Không tìm thấy node IBUS trên phần cứng này"
+        // v3.7: áp/dòng đàm phán từ dumpsys (để ghi CSV).
+        var negVbusV: Float? = null
+        var negIbusA: Float? = null
         val protoItems = mutableListOf<String>()
         var protoPath = ""
         var cycleCount = ""
@@ -903,6 +917,9 @@ object PrivilegedTelemetryEngine {
                 t.startsWith("CYCLE:") -> cycleCount = t.substringAfter(":").trim()
                 t.startsWith("FULL:") -> chargeFull = t.substringAfter(":").trim().toFloatOrNull() ?: 0f
                 t.startsWith("DESIGN:") -> chargeDesign = t.substringAfter(":").trim().toFloatOrNull() ?: 0f
+                // v3.7: áp/dòng đàm phán từ dumpsys (để ghi CSV).
+                t.startsWith("NEGV:") -> negVbusV = normalizeUnitToVolt(t.substringAfter(":").trim().toFloatOrNull())
+                t.startsWith("NEGI:") -> negIbusA = normalizeUnitToAmp(t.substringAfter(":").trim().toFloatOrNull())
             }
         }
 
@@ -931,7 +948,10 @@ object PrivilegedTelemetryEngine {
             // sau null-check ("smart cast to 'Float' is impossible"). Dùng Elvis để giữ
             // đúng hành vi cũ: null -> 0f -> false, >= 3.5f -> true.
             isVbusMeasured = (vbusV ?: 0f) >= 3.5f,
-            isKernelProtocolVerified = protoJoined.isNotEmpty()
+            isKernelProtocolVerified = protoJoined.isNotEmpty(),
+            // v3.7: áp/dòng đàm phán từ dumpsys (để ghi CSV).
+            negotiatedVbusV = negVbusV,
+            negotiatedIbusA = negIbusA
         )
     }
 }
@@ -1639,6 +1659,11 @@ object TelemetryRepository {
     private val _cellSeriesCount = MutableStateFlow(1)
     val cellSeriesCount: StateFlow<Int> = _cellSeriesCount.asStateFlow()
 
+    // v3.7: true khi người dùng đã chạm tay chọn 1S/2S trong phiên này —
+    // lúc đó auto-detect không ghi đè lựa chọn của họ nữa.
+    private val _cellSeriesManual = MutableStateFlow(false)
+    val cellSeriesManual: StateFlow<Boolean> = _cellSeriesManual.asStateFlow()
+
     private val _refreshIntervalMs = MutableStateFlow(1000L)
     val refreshIntervalMs: StateFlow<Long> = _refreshIntervalMs.asStateFlow()
 
@@ -1673,7 +1698,19 @@ object TelemetryRepository {
     }
 
     fun setCellSeriesCount(count: Int) {
+        _cellSeriesManual.value = true
         _cellSeriesCount.value = count.coerceIn(1, 2)
+    }
+
+    // v3.7: Tự nhận diện số cell theo V_bat (điện áp 1 cell Li-ion 3,0–4,4V;
+    // pin 2S báo tổng ~7,4–8,8V qua EXTRA_VOLTAGE). Bằng chứng 10/11:
+    // (2a) Plus đọc V_bat 3,70–4,10V nhưng app đang để 2S nên P_bat bị
+    // nhân đôi (21,6W ghi vs ~10,8W thật). Chỉ chạy khi chưa chọn tay.
+    fun autoDetectCells(vBatVolt: Float) {
+        if (_cellSeriesManual.value) return
+        if (vBatVolt < 2.5f) return // chưa đọc được V_bat hợp lệ
+        val detected = if (vBatVolt >= 5.0f) 2 else 1
+        if (_cellSeriesCount.value != detected) _cellSeriesCount.value = detected
     }
 
     fun setRefreshInterval(ms: Long) {
@@ -1719,7 +1756,7 @@ object TelemetryRepository {
 
         runCatching {
             FileOutputStream(csvFile, false).bufferedWriter().use { writer ->
-                writer.write("Thoi_Gian,Che_Do,V_Bat(V),I_Bat(A),P_Bat_Est(W),So_Cell,V_Bus(V),I_Bus(A),P_Vbus(W),Nhiet_Do(C),Pin(%),Chuan_Sac\n")
+                writer.write("Thoi_Gian,Che_Do,V_Bat(V),I_Bat(A),P_Bat_Est(W),So_Cell,V_Bus(V),I_Bus(A),P_Vbus(W),Nhiet_Do(C),Pin(%),Chuan_Sac,Ap_Dam_Phan(V),Dong_Dam_Phan(A)\n")
             }
         }
 
@@ -1778,6 +1815,9 @@ object TelemetryRepository {
         val vbusStr = snap.sysfsReport.vbusVoltageV?.let { String.format(Locale.US, "%.3f", it) } ?: "N/A"
         val ibusStr = snap.sysfsReport.ibusCurrentA?.let { String.format(Locale.US, "%.3f", it) } ?: "N/A"
         val pvbusStr = snap.vbusInputPowerW?.let { String.format(Locale.US, "%.2f", it) } ?: "N/A"
+        // v3.7: áp/dòng đàm phán (dumpsys Max charging) — để biết củ sạc đàm phán 5V hay 9V.
+        val negVbusStr = snap.sysfsReport.negotiatedVbusV?.let { String.format(Locale.US, "%.2f", it) } ?: "N/A"
+        val negIbusStr = snap.sysfsReport.negotiatedIbusA?.let { String.format(Locale.US, "%.2f", it) } ?: "N/A"
         val modeTag = snap.sysfsReport.activeMode.shortTitle
 
         runCatching {
@@ -1788,7 +1828,7 @@ object TelemetryRepository {
                             "${String.format(Locale.US, "%.2f", snap.effectiveBatPowerW)}," +
                             "${snap.cellSeriesCount}S,$vbusStr,$ibusStr,$pvbusStr," +
                             "${String.format(Locale.US, "%.1f", snap.temperatureC)}," +
-                            "${snap.levelPercent},\"$protocolLabel\"\n"
+                            "${snap.levelPercent},\"$protocolLabel\",$negVbusStr,$negIbusStr\n"
                 )
             }
         }
@@ -2018,6 +2058,8 @@ class ChargingMonitorService : Service() {
                 val currentMa = if (abs(rawCurrent) > 50_000) rawCurrent / 1000f else rawCurrent.toFloat()
                 val currentAmp = abs(currentMa) / 1000f
 
+                // v3.7: tự nhận diện 1S/2S theo V_bat trước khi tính P_bat.
+                TelemetryRepository.autoDetectCells(latestBatVolt)
                 val cells = TelemetryRepository.cellSeriesCount.value
                 val batPowerW = latestBatVolt * currentAmp * cells
 
@@ -2109,7 +2151,7 @@ class ChargingMonitorService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("Battery Power Monitor v3.6 (Shizuku ẩn, bố cục V2)")
+            .setContentTitle("Battery Power Monitor v3.7 (1S tự nhận diện, CSV thêm áp đàm phán)")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -2734,6 +2776,12 @@ fun RealtimeDashboardTab(
                             )
                         }
                     }
+                    // v3.7: ghi rõ auto-detect để khỏi nhầm nút này là cài đặt cố định.
+                    Text(
+                        text = "Tự nhận diện theo V_bat (1 cell: 3,0–4,4V; pin 2S: ~7,4–8,8V) — chạm nút trên để chọn tay.",
+                        color = Color(0xFF64748B),
+                        fontSize = 11.sp
+                    )
                 }
             }
         }
